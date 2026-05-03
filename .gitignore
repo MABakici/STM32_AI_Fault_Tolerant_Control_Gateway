@@ -1,55 +1,44 @@
-# Prerequisites
-*.d
+# ==========================================
+# STM32 AI Fault Tolerant Control Gateway
+# Git Ignore Configuration
+# ==========================================
 
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+# --- Workspace & IDE Specific ---
+.metadata/
+.plugins/
+RemoteSystemsTempFiles/
+*.log
+.lock
 
-# Linker output
-*.ilk
-*.map
-*.exp
+# --- Build Output Logic (Strict Mode) ---
+# Ignore everything inside any Debug or Release folder
+**/Debug/*
+**/Release/*
 
-# Precompiled Headers
-*.gch
-*.pch
+# Exceptions: Only keep HEX, LIST and MAKEFILE
+!**/Debug/*.hex
+!**/Debug/*.list
+!**/Debug/makefile
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
+# --- Source Code Protection (Global Ignores) ---
+# Specifically block the junk files seen in image_e12221.png
+*.cyclo
 *.su
-*.idb
-*.pdb
+*.o
+*.d
+*.o.d
+*.mk
+*.elf
+*.map
+objects.list
+objects.mk
+sources.mk
 
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
+# --- IDE Project Files ---
+.settings/
+.mxproject
+*.launch
 
-# debug information files
-*.dwo
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
