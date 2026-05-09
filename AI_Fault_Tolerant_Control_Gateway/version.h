@@ -12,7 +12,35 @@
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    0
 #define SW_VERSION_PATCH    1
-#define BUILD_DATE          "2026-05-04"
+#define BUILD_DATE          "2026-05-10"
+
+
+/************************************************************************
+* @version         : v0.0.2
+* @author          : Mehmet Alperen Bakici
+* @date            : 2026.05.10 01:32
+* @branch          : main
+*-------------------------------------------------------------------
+* @notes           :
+*
+* - FreeRTOS (CMSIS_V2) Integration:
+* - Implemented multi-tasking architecture for parallel processing.
+* - Created StartIMUReadTask (High Priority) for 50Hz sensor polling.
+* - Created StartAnalysisTask (Normal Priority) for real-time fault detection.
+* - Created StartHeartbeatTask (Low Priority) for system health monitoring.
+*
+* - Sensor & Hardware Advancements:
+* - Integrated MPU6050 IMU on dedicated I2C2 bus (PB10/PB11).
+* - Implemented I2C Mutex protection to ensure bus arbitration safety.
+* - Added Impact Detection (G-Force analysis) and Tilt Detection logic.
+*
+* - System Reliability:
+* - Migrated HAL Timebase from SysTick to TIM1 for RTOS compatibility.
+* - Configured Newlib Reentrancy for thread-safe math operations (sqrtf).
+* - Stabilized inter-task communication via global shared memory structure.
+*
+*************************************************************************/
+
 
 /************************************************************************
 * @version         : v0.0.1

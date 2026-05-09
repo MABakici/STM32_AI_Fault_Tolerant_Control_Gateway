@@ -10,6 +10,7 @@
 /* External handles for peripherals */
 extern UART_HandleTypeDef huart3;
 extern I2C_HandleTypeDef hi2c1;
+extern I2C_HandleTypeDef hi2c2;
 
 /**********************************************************************************
  * @author   Mehmet Alperen BAKICI
@@ -29,7 +30,9 @@ void Serial_Log_Message(char *msg) {
 void I2C_Peripheral_Discovery(void) {
     Serial_Log_Message("\r\n[I2C] Scanning bus for active peripherals...\r\n");
     HAL_StatusTypeDef result;
-    uint8_t device_count = 0;
+    uint8_t i2c1_device_count = 0;
+    uint8_t i2c2_device_count = 0;
+
 
     for (uint16_t i = 1; i < 128; i++) {
         /* Check device readiness by shifting address (7-bit to 8-bit) */
@@ -37,13 +40,27 @@ void I2C_Peripheral_Discovery(void) {
 
         if (result == HAL_OK) {
             char addr_msg[64];
-            sprintf(addr_msg, "[I2C] Device detected at address: 0x%02X\r\n", i);
+            sprintf(addr_msg, "[I2C1] Device detected at address: 0x%02X\r\n", i);
             Serial_Log_Message(addr_msg);
-            device_count++;
+            i2c1_device_count++;
         }
     }
 
-    if (device_count == 0) {
+    for (uint16_t i = 1; i < 128; i++) {
+        /* Check device readiness by shifting address (7-bit to 8-bit) */
+        result = HAL_I2C_IsDeviceReady(&hi2c2, (uint16_t)(i << 1), 3, 10);
+
+        if (result == HAL_OK) {
+            char addr_msg[64];
+            sprintf(addr_msg, "[I2C2] Device detected at address: 0x%02X\r\n", i);
+            Serial_Log_Message(addr_msg);
+            i2c2_device_count++;
+        }
+    }
+
+    if ( (i2c1_device_count == 0) &&
+         (i2c2_device_count == 0)   )
+    {
         Serial_Log_Message("[I2C] CRITICAL: No peripherals detected on the bus!\r\n");
     } else {
         Serial_Log_Message("[I2C] Bus discovery completed successfully.\r\n");
