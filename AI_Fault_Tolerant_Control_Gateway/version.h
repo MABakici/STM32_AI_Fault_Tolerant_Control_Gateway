@@ -11,8 +11,24 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    0
-#define SW_VERSION_PATCH    1
+#define SW_VERSION_PATCH    3
 #define BUILD_DATE          "2026-05-10"
+
+
+
+
+/************************************************************************
+* @version         : v0.0.3
+* @author          : Mehmet Alperen Bakici
+* @date            : 2026.05.10 02:10
+* @branch          : main
+*-------------------------------------------------------------------
+* @notes           :
+*
+* - Configured FreeRTOS task generation as "__weak" in CubeMX to prevent
+*   "multiple definition" errors between main.c and freertos.c.
+*
+*************************************************************************/
 
 
 /************************************************************************
