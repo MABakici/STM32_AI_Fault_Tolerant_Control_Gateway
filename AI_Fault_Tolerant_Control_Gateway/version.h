@@ -11,10 +11,35 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    0
-#define SW_VERSION_PATCH    3
+#define SW_VERSION_PATCH    4
 #define BUILD_DATE          "2026-05-10"
 
 
+/************************************************************************
+* @version         : v0.0.4
+* @author          : Mehmet Alperen Bakici
+* @date            : 2026.05.10 12:10
+* @branch          : main
+*-------------------------------------------------------------------
+* @notes           :
+*
+* - Communication Infrastructure & Protocol Design:
+* - Implemented "StartCommunicationTask" for high-speed packet processing.
+* - Developed a robust Binary Communication Protocol using 0x99AA Sync Headers.
+* - Integrated UART DMA Circular Mode for USART3 to achieve zero-CPU overhead RX.
+* - Implemented Checksum (CRC) validation for ensuring data frame integrity.
+*
+* - Event Dispatcher & Modular Architecture:
+* - Established a Function Pointer based Event Dispatcher for efficient routing.
+* - Decoupled communication logic from global state via "Comm_Handle_t" structure.
+* - Applied Dependency Injection for modular and testable handler functions.
+* - Created specialized handler prototypes for System, Motor, and AI control.
+*
+* - Documentation & Code Standards:
+* - Standardized all function headers with official Doxygen-style technical notes.
+* - Optimized workspace organization with dedicated .c/.h modules for comms.
+*
+*************************************************************************/
 
 
 /************************************************************************

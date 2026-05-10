@@ -72,6 +72,7 @@ I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c2;
 
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart3_rx;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
@@ -96,6 +97,13 @@ const osThreadAttr_t HeartbeatTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
+/* Definitions for CommTask */
+osThreadId_t CommTaskHandle;
+const osThreadAttr_t CommTask_attributes = {
+  .name = "CommTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* Definitions for I2C2_Mutex */
 osMutexId_t I2C2_MutexHandle;
 const osMutexAttr_t I2C2_Mutex_attributes = {
@@ -108,14 +116,16 @@ const osMutexAttr_t I2C2_Mutex_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_ETH_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_I2C2_Init(void);
+static void MX_ETH_Init(void);
 void StartIMUReadTask(void *argument);
 void StartAnalysisTask(void *argument);
 void StartHeartbeatTask(void *argument);
+void StartCommTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 /* USER CODE END PFP */
@@ -182,11 +192,12 @@ HSEM notification */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_ETH_Init();
+  MX_DMA_Init();
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   MX_I2C1_Init();
   MX_I2C2_Init();
+  MX_ETH_Init();
   /* USER CODE BEGIN 2 */
 
   //!< Ilk ayarlamalari yapiyoruz.
@@ -225,6 +236,9 @@ HSEM notification */
 
   /* creation of HeartbeatTask */
   HeartbeatTaskHandle = osThreadNew(StartHeartbeatTask, NULL, &HeartbeatTask_attributes);
+
+  /* creation of CommTask */
+  CommTaskHandle = osThreadNew(StartCommTask, NULL, &CommTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -537,6 +551,22 @@ static void MX_USB_OTG_FS_PCD_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -642,6 +672,24 @@ __weak void StartHeartbeatTask(void *argument)
     osDelay(1);
   }
   /* USER CODE END StartHeartbeatTask */
+}
+
+/* USER CODE BEGIN Header_StartCommTask */
+/**
+* @brief Function implementing the CommTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartCommTask */
+__weak void StartCommTask(void *argument)
+{
+  /* USER CODE BEGIN StartCommTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartCommTask */
 }
 
 /**

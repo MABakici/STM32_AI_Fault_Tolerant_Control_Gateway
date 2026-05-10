@@ -28,9 +28,13 @@
 #include "math.h"
 #include "mpu6050.h"
 #include "global_variables_CM7.h"
+#include "control_gateway_comm_handler.h"
 
 extern I2C_HandleTypeDef hi2c1;
 extern I2C_HandleTypeDef hi2c2;
+
+/* External handle for USART3 defined in main.c */
+extern UART_HandleTypeDef huart3;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -158,6 +162,46 @@ void StartHeartbeatTask(void *argument)
     }
     osDelay(500);
   }
+}
+
+/**
+ * @brief  Task: Communication Gateway (Normal Priority)
+ * @author Mehmet Alperen BAKICI
+ * @date   10.05.2026
+ * @note   Handles asynchronous UART communication using DMA and IDLE line detection.
+ * Uses dependency injection via Comm_Handle_t to process incoming frames.
+ */
+void StartCommunicationTask(void *argument)
+{
+  /* USER CODE BEGIN StartCommunicationTask */
+
+  /* Configuration of the communication handle with global resource pointers */
+  Comm_Handle_t hGatewayComm = {
+      .pRxBuffer     = Global_t.uart_gateway.rx_buffer,
+      .pErrorCounter = &Global_t.uart_gateway.uart_error_cnt
+  };
+
+  /* Initialize UART3 Reception in DMA Circular Mode for the defined frame length */
+  /* This setup allows continuous hardware buffering without CPU overhead */
+  HAL_UART_Receive_DMA(&huart3, Global_t.uart_gateway.rx_buffer, FRAME_LENGTH);
+
+  /* Infinite loop */
+  for(;;)
+  {
+    /* Check for the packet ready flag triggered by the UART IDLE line interrupt */
+    if ( Global_t.uart_gateway.packet_ready == 1 )
+    {
+      /* Execution of the modular packet parsing and validation engine */
+      Comm_Process_Packet(&hGatewayComm);
+
+      /* Reset the processing flag to wait for the next asynchronous frame */
+      Global_t.uart_gateway.packet_ready = 0;
+    }
+
+    /* Task yielding to maintain system scheduling stability */
+    osDelay(10);
+  }
+  /* USER CODE END StartCommunicationTask */
 }
 
 
