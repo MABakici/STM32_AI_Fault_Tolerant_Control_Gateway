@@ -48,11 +48,13 @@ void Comm_Dispatch_Event(uint8_t cmd, uint8_t data)
     }
 }
 
-/**********************************************************************************
- * @author    Mehmet Alperen BAKICI
- * @date      10.05.2026
- * @note      Performs frame synchronization and data integrity validation.
- ***********************************************************************************/
+/**
+ * @brief  Protocol Analysis Engine: Validates frames and manages transient UI states.
+ * @author Mehmet Alperen BAKICI
+ * @date   11.05.2026
+ * @param  hComm: Pointer to the communication handle.
+ * @note   Updated to lock UI updates for 3 seconds upon valid packet arrival.
+ */
 void Comm_Process_Packet(Comm_Handle_t *hComm)
 {
     /* Null pointer protection for robust execution */
@@ -61,28 +63,74 @@ void Comm_Process_Packet(Comm_Handle_t *hComm)
         return;
     }
 
+    /* Map local pointers to the incoming raw data stream */
     uint8_t *raw = hComm->pRxBuffer;
+    uint8_t cmd  = 0;
+    uint8_t data = 0;
+    uint8_t crc  = 0;
 
-    /* Frame Synchronization Check: 0x99 0xAA */
+    /* SECTION 1: Frame Synchronization (Header: 0x99 0xAA) */
     if ( ( raw[0] == FRAME_HEADER_1 ) && ( raw[1] == FRAME_HEADER_2 ) )
     {
-        uint8_t cmd  = raw[2];
-        uint8_t data = raw[3];
-        uint8_t crc  = raw[4];
+        cmd  = raw[2];
+        data = raw[3];
+        crc  = raw[4];
 
-        /* Protocol Checksum Validation: CMD + DATA == CRC */
+        /* SECTION 2: Protocol Integrity Validation (CMD + DATA == CRC) */
         if ( (uint8_t)( cmd + data ) == crc )
         {
-            /* Integrity confirmed, proceed to event dispatching */
+            /* Trigger UI Lock: Signals StartCommTask to suspend uptime updates for 3 seconds */
+            Global_t.uart_gateway.last_packet_tick     = HAL_GetTick();
+            Global_t.uart_gateway.display_timeout_flag = 1;
+
+            char line1[20];
+            char line2[20];
+
+            memset(line1, 0, sizeof(line1));
+            memset(line2, 0, sizeof(line2));
+
+            /* SECTION 3: Transient UI Data Formatting */
+            /* Clear line with trailing spaces to prevent character overlap */
+            sprintf(line1, "RECV ID:%02X      ", cmd);
+
+            /* Map command IDs to human-readable functional descriptors */
+            switch(cmd)
+            {
+                case 0x01: sprintf(line2, "VAL:%-3d SYS INIT ", data); break;
+                case 0x02: sprintf(line2, "VAL:%-3d MOTOR CTR", data); break;
+                case 0x03: sprintf(line2, "VAL:%-3d AI CONFIG", data); break;
+                default:   sprintf(line2, "VAL:%-3d UNKNOWN   ", data); break;
+            }
+
+            /* SECTION 4: Immediate Physical UI Update */
+            /* This content will be held for 3 seconds by the task scheduler */
+            LCD_Clear();
+            LCD_Put_Cursor(0, 0);
+            LCD_Send_String(line1);
+
+            LCD_Put_Cursor(1, 0);
+            LCD_Send_String(line2);
+
+            /* SECTION 5: Serial Telemetry (CLI Feedback) */
+            printf("\r\n[GATEWAY] Valid Packet Processed.\r\n");
+            printf("[GATEWAY] Action: %s | Data: %d\r\n", line2 + 8, data);
+
+            /* Trigger the specialized event dispatcher for command execution */
             Comm_Dispatch_Event(cmd, data);
         }
         else
         {
-            /* Checksum mismatch: Increment external error counter via pointer */
+            /* Checksum validation failure - Update telemetry metrics */
+            printf("[ERROR] Checksum Mismatch detected for ID: 0x%02X\r\n", cmd);
+
             if ( hComm->pErrorCounter != NULL )
             {
                 ( *( hComm->pErrorCounter ) )++;
             }
         }
     }
+
+    /* SECTION 6: Buffer Sanitization */
+    /* Flush the RX buffer to prevent stale data re-processing */
+    memset(hComm->pRxBuffer, 0, 5);
 }

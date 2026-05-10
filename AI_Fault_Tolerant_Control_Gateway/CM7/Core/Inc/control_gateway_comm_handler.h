@@ -2,6 +2,9 @@
 #define CONTROL_GATEWAY_DEFINITIONS_COMM_HANDLER_H_
 
 #include "main.h"
+#include "control_gateway_lcd.h"
+#include <stdio.h>  /* Required for sprintf */
+#include "global_variables_CM7.h"
 
 /* Frame Definitions */
 #define FRAME_HEADER_1    ( 0x99 )

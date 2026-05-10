@@ -11,8 +11,31 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    0
-#define SW_VERSION_PATCH    4
-#define BUILD_DATE          "2026-05-10"
+#define SW_VERSION_PATCH    5
+#define BUILD_DATE          "2026-05-11"
+
+
+
+/************************************************************************
+* @version          : v0.0.5
+* @author           : Mehmet Alperen Bakici
+* @date             : 2026.05.11 02:15
+* @branch           : main
+*-------------------------------------------------------------------
+* @notes            :
+*
+* - Asynchronous UI & State Management:
+* - Engineered a non-blocking UI State Machine for real-time telemetry.
+* - Implemented "Transient Message Locking" (3s TTL) for packet visualization.
+* - Integrated System Uptime Telemetry on LCD Row 0 using FreeRTOS tasking.
+* - Developed an auto-reset logic for the UI to resume monitoring mode.
+*
+* - Memory & Resource Optimization:
+* - Applied "Strict Mutual Exclusion" logic to prevent LCD flickering/overlap.
+* - Integrated UI timing states into centralized "Global_t" structure.
+* - Implemented post-processing buffer sanitization for DMA security.
+*
+*************************************************************************/
 
 
 /************************************************************************

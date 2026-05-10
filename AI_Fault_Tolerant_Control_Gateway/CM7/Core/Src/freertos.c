@@ -167,39 +167,80 @@ void StartHeartbeatTask(void *argument)
 /**
  * @brief  Task: Communication Gateway (Normal Priority)
  * @author Mehmet Alperen BAKICI
- * @date   10.05.2026
- * @note   Handles asynchronous UART communication using DMA and IDLE line detection.
- * Uses dependency injection via Comm_Handle_t to process incoming frames.
+ * @date   11.05.2026
+ * @note   Implements a non-blocking UI state machine for uptime and packet telemetry.
  */
-void StartCommunicationTask(void *argument)
+void StartCommTask(void *argument)
 {
   /* USER CODE BEGIN StartCommunicationTask */
 
-  /* Configuration of the communication handle with global resource pointers */
+  /* Local buffer and variables for time tracking */
+  char uptime_buf[17];
+  uint32_t sec = 0, min = 0, hour = 0;
+
+  /* Initialize communication handle with global data pointers */
   Comm_Handle_t hGatewayComm = {
       .pRxBuffer     = Global_t.uart_gateway.rx_buffer,
       .pErrorCounter = &Global_t.uart_gateway.uart_error_cnt
   };
 
-  /* Initialize UART3 Reception in DMA Circular Mode for the defined frame length */
-  /* This setup allows continuous hardware buffering without CPU overhead */
+  /* Start background UART reception via DMA */
   HAL_UART_Receive_DMA(&huart3, Global_t.uart_gateway.rx_buffer, FRAME_LENGTH);
 
-  /* Infinite loop */
+  /* Enable UART Idle Line detection interrupt */
+  __HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
+
+  /* Initial display setup */
+  LCD_Clear();
+
   for(;;)
   {
-    /* Check for the packet ready flag triggered by the UART IDLE line interrupt */
+    /* Current timestamp snapshot */
+    uint32_t current_tick = HAL_GetTick();
+
+    /* --- SECTION 1: PACKET ACQUISITION --- */
+    /* Priority: Always check for incoming data frames first */
     if ( Global_t.uart_gateway.packet_ready == 1 )
     {
-      /* Execution of the modular packet parsing and validation engine */
+      /* Parse packet and set the display_timeout_flag to 1 */
       Comm_Process_Packet(&hGatewayComm);
 
-      /* Reset the processing flag to wait for the next asynchronous frame */
+      /* Reset ISR flag after processing */
       Global_t.uart_gateway.packet_ready = 0;
     }
 
-    /* Task yielding to maintain system scheduling stability */
-    osDelay(10);
+    /* --- SECTION 2: UI STATE MACHINE --- */
+    /* Check if the system is in 'Transient Message' or 'Idle Monitoring' state */
+    if (Global_t.uart_gateway.display_timeout_flag == 1)
+    {
+        /* STATE: HOLD - Maintain packet info on screen for 3 seconds */
+        if (current_tick - Global_t.uart_gateway.last_packet_tick > 3000)
+        {
+            /* Transition to IDLE: Reset flag and clear screen for uptime telemetry */
+            Global_t.uart_gateway.display_timeout_flag = 0;
+            LCD_Clear();
+        }
+    }
+    else
+    {
+        /* STATE: IDLE - Routine System Uptime and Status Update */
+        sec  = (current_tick / 1000) % 60;
+        min  = (current_tick / 60000) % 60;
+        hour = (current_tick / 3600000);
+
+        /* Format uptime string for row 0 */
+        sprintf(uptime_buf, "UPTIME: %02lu:%02lu:%02lu", hour, min, sec);
+
+        LCD_Put_Cursor(0, 0);
+        LCD_Send_String(uptime_buf);
+
+        /* Fixed status message for row 1 */
+        LCD_Put_Cursor(1, 0);
+        LCD_Send_String("IDLE - READY    ");
+    }
+
+    /* Maintain task frequency at 10Hz to ensure UI stability */
+    osDelay(100);
   }
   /* USER CODE END StartCommunicationTask */
 }

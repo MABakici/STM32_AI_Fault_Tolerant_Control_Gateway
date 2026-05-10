@@ -22,6 +22,7 @@
 #include "stm32h7xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "global_variables_CM7.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -195,7 +196,15 @@ void TIM1_UP_IRQHandler(void)
 void USART3_IRQHandler(void)
 {
   /* USER CODE BEGIN USART3_IRQn 0 */
+	/* Check if IDLE line interrupt occurred */
+	  if (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_IDLE) != RESET)
+	  {
+	    /* Clear IDLE flag by reading SR and then DR */
+	    __HAL_UART_CLEAR_IDLEFLAG(&huart3);
 
+	    /* Signal the Communication Task that a data burst is complete */
+	    Global_t.uart_gateway.packet_ready = 1;
+	  }
   /* USER CODE END USART3_IRQn 0 */
   HAL_UART_IRQHandler(&huart3);
   /* USER CODE BEGIN USART3_IRQn 1 */

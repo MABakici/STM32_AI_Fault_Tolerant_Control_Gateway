@@ -617,7 +617,37 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/**
+ * @brief  System Initialization Command Handler
+ */
+void Execute_System_Init(uint8_t val)
+{
+    // Sistem logu basarak çalıştığını teyit edelim
+    printf("[DISPATCHER] System Init Executed with VAL: %d\r\n", val);
 
+    if(val == 1) {
+        // İleride buraya sistem reset veya çevre birimi init kodları gelecek
+        HAL_NVIC_SystemReset();
+    }
+}
+
+/**
+ * @brief  Motor Control Command Handler
+ */
+void Execute_Motor_Control(uint8_t val)
+{
+    printf("[DISPATCHER] Motor Control Set to: %d%%\r\n", val);
+    // Buraya PWM Update fonksiyonunu ekleyeceğiz: __HAL_TIM_SET_COMPARE(...)
+}
+
+/**
+ * @brief  AI Configuration Command Handler
+ */
+void Execute_AI_Config(uint8_t val)
+{
+    printf("[DISPATCHER] AI Threshold Updated to: %d\r\n", val);
+    // Buraya TinyML model eşik değerini güncelleyen global atama gelecek
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartIMUReadTask */

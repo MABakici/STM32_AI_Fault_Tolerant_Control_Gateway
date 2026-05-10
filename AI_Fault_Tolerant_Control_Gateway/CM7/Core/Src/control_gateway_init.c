@@ -37,6 +37,9 @@ void AI_Based_Fault_Tolerant_Control_Gateway_Init(void)
     /* LCD'yi baslat ve mesajı yazdir */
     LCD_Init();
 
+    /* Enable UART IDLE Interrupt */
+    __HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
+
     Serial_Log_Message("[INFO] System startup sequence finalized.\r\n");
 }
 
