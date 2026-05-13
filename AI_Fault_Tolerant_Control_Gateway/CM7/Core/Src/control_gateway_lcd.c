@@ -107,15 +107,29 @@ void LCD_Send_String(char *str) {
 
 /**********************************************************************************
  * @author   Mehmet Alperen BAKICI
- * @date     03.05.2026
- * @note     Positions the cursor on the screen (0-1 for rows).
+ * @date     14.05.2026 (Updated for 20x4 LCD)
+ * @note     Positions the cursor on the screen (0-3 for rows).
  ***********************************************************************************/
 void LCD_Put_Cursor(int row, int col) {
+    uint8_t address;
     switch (row) {
-        case 0: col |= 0x80; break;
-        case 1: col |= 0xC0; break;
+        case 0:
+            address = 0x80 + col; // 1. Satır başı
+            break;
+        case 1:
+            address = 0xC0 + col; // 2. Satır başı
+            break;
+        case 2:
+            address = 0x94 + col; // 3. Satır başı (20x4 LCD özel adresi)
+            break;
+        case 3:
+            address = 0xD4 + col; // 4. Satır başı (20x4 LCD özel adresi)
+            break;
+        default:
+            address = 0x80; // Hatalı satır gelirse en başa dön
+            break;
     }
-    LCD_Send_Cmd(col);
+    LCD_Send_Cmd(address);
 }
 
 /**********************************************************************************

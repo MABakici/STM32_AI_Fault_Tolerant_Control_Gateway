@@ -11,8 +11,43 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    0
-#define SW_VERSION_PATCH    5
-#define BUILD_DATE          "2026-05-11"
+#define SW_VERSION_PATCH    6
+#define BUILD_DATE          "2026-05-14"
+
+
+
+
+/************************************************************************
+* @version          : v0.0.6
+* @author           : Mehmet Alperen Bakici
+* @date             : 2026.05.14 02:20
+* @branch           : main
+*-------------------------------------------------------------------
+* @notes            :
+*
+* - Integrated Fault-Tolerant Actuation:
+* - Developed an automated safety-cutoff mechanism linking MPU6050 Tilt
+*   detection directly to DRV8833 PWM generation.
+* - Implemented "StartMotorCntTask" (Normal Priority) for real-time
+*   motor state management and telemetric feedback.
+*
+* - Advanced UI & Display Architecture:
+* - Engineered a 20x4 HD44780/PCF8574 Address Mapping logic to fix
+*   multi-line cursor displacement (0x80, 0xC0, 0x94, 0xD4).
+* - Applied "Constant Width Padding" (20-char normalization) to eliminate
+*   screen flickering and ghosting without using global clearing commands.
+*
+* - Real-Time Performance Tuning:
+* - Optimized IMU debounce filters from 500ms to 100ms for high-speed
+*   safety response.
+* - Synchronized Motor Control loop frequency to 50Hz for seamless
+*   integration with IMU acquisition rates.
+*
+* - Hardware Abstraction:
+* - Modularized DRV8833 driver logic using Timer PWM handles (TIM3)
+*   with Common Ground (GND) synchronization for multi-power systems.
+*
+*************************************************************************/
 
 
 

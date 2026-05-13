@@ -1,3 +1,4 @@
+#include <control_gateway_drv8833_driver.h>
 #include <global_variables_CM7.h>
 #include <mpu6050.h>
 #include "control_gateway_init.h"
@@ -8,6 +9,7 @@
 extern UART_HandleTypeDef huart3;
 extern I2C_HandleTypeDef hi2c1;
 extern I2C_HandleTypeDef hi2c2;
+extern TIM_HandleTypeDef htim3;
 
 
 /**********************************************************************************
@@ -36,6 +38,9 @@ void AI_Based_Fault_Tolerant_Control_Gateway_Init(void)
 
     /* LCD'yi baslat ve mesajı yazdir */
     LCD_Init();
+
+    /* Motor driver baslatiliyor. */
+    DRV8833_Init(&htim3);
 
     /* Enable UART IDLE Interrupt */
     __HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
