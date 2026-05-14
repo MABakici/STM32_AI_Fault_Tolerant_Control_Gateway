@@ -16,6 +16,24 @@
 
 
 
+/************************************************************************
+* @version           : v0.0.7
+* @author            : Mehmet Alperen Bakici
+* @date              : 2026.05.14 03:40
+* @branch            : main
+*-------------------------------------------------------------------
+* @notes             :
+*
+* - Dynamic Motor Speed Orchestration:
+* - Integrated an asynchronous Command Dispatcher that enables real-time
+*   PWM adjustments (0% - 100%) via remote serial instructions.
+*
+* - UI Responsiveness:
+* - Decoupled LCD rendering from communication handlers to maintain
+*   system uptime stability during high-frequency data ingestion.
+*
+*************************************************************************/
+
 
 /************************************************************************
 * @version          : v0.0.6
@@ -48,7 +66,6 @@
 *   with Common Ground (GND) synchronization for multi-power systems.
 *
 *************************************************************************/
-
 
 
 /************************************************************************

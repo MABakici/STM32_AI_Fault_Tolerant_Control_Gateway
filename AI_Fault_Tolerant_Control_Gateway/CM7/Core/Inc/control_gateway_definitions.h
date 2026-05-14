@@ -15,6 +15,12 @@ typedef struct {
     uint8_t  display_timeout_flag; // Ekran temizleme bekliyor mu?
 } UART_Comm_t;
 
-
+typedef struct
+{
+    uint8_t  target_speed;      // Target speed percentage (0-100)
+    uint8_t  is_system_halted;  // Software emergency stop flag (0: Run, 1: Halt)
+    uint16_t current_rpm;       // Placeholder for future encoder/estimation data
+    uint8_t  active_direction;  // 0: Forward, 1: Backward
+} Motor_Control_t;
 
 #endif

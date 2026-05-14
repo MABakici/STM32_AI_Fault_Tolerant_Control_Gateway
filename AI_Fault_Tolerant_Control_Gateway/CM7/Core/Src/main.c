@@ -24,6 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "control_gateway_init.h"
+#include "global_variables_CM7.h"
 
 /* USER CODE END Includes */
 
@@ -710,12 +711,27 @@ void Execute_System_Init(uint8_t val)
 }
 
 /**
- * @brief  Motor Control Command Handler
+ * @brief  Handler for DC motor speed regulation via PWM duty cycle adjustment.
+ * @param  val: Target duty cycle percentage (0-100).
+ * @note   This function updates the global motor structure which is then
+ *         processed by the StartMotorCntTask for real-time actuation.
  */
 void Execute_Motor_Control(uint8_t val)
 {
-    printf("[DISPATCHER] Motor Control Set to: %d%%\r\n", val);
-    // Buraya PWM Update fonksiyonunu ekleyeceğiz: __HAL_TIM_SET_COMPARE(...)
+    /* Safety check: Ensure the incoming value is within logical PWM bounds */
+    if (val <= 100)
+    {
+        /* Update the global motor control structure */
+        Global_t.dc_motor_control.target_speed = val;
+
+        /* Provide CLI feedback for debugging and monitoring */
+        printf("[DISPATCHER] Motor target speed updated to: %d%%\r\n", val);
+    }
+    else
+    {
+        /* Log invalid command attempts */
+        printf("[ERROR] Invalid Motor Speed Command: %d (Out of range)\r\n", val);
+    }
 }
 
 /**
