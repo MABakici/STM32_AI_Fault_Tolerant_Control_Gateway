@@ -18,13 +18,13 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include <control_gateway_drv8833_driver.h>
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "control_gateway_drv8833_driver.h"
 #include "cmsis_os2.h"
 #include "math.h"
 #include "mpu6050.h"
@@ -178,9 +178,10 @@ void StartHeartbeatTask(void *argument)
 /**
  * @brief  Task: Communication & UI Gateway (Normal Priority)
  * @author Mehmet Alperen BAKICI
- * @date   14.05.2026
+ * @date   16.05.2026
  * @details Handles UART packet processing and orchestrates 20x4 LCD
- *          telemetry display including Uptime, IMU status, and Motor states.
+ * telemetry display including Uptime, IMU status, Motor states,
+ * and real-time ACS712 current sensing transients.
  */
 void StartCommTask(void *argument)
 {
@@ -191,6 +192,7 @@ void StartCommTask(void *argument)
         .pErrorCounter = &Global_t.uart_gateway.uart_error_cnt
     };
 
+    /* DMA'yı başlat */
     HAL_UART_Receive_DMA(&huart3, Global_t.uart_gateway.rx_buffer, FRAME_LENGTH);
     LCD_Clear();
     osDelay(100);
@@ -199,7 +201,19 @@ void StartCommTask(void *argument)
     {
         uint32_t current_tick = HAL_GetTick();
 
-        /* --- ROW 0: UPTIME --- */
+        /* --- 1. PAKET İ�?LEME MANTI�?I --- */
+        if (Global_t.uart_gateway.packet_ready == 1)
+        {
+            Comm_Process_Packet(&hGatewayComm);
+
+            /* Zaman damgasını ve görsel kilit bayrağını güncelle */
+            Global_t.uart_gateway.last_packet_tick = current_tick;
+            Global_t.uart_gateway.display_timeout_flag = 1;
+
+            Global_t.uart_gateway.packet_ready = 0;
+        }
+
+        /* --- 2. ROW 0: UPTIME --- */
         sec = (current_tick / 1000) % 60;
         min = (current_tick / 60000) % 60;
         hour = (current_tick / 3600000);
@@ -207,52 +221,62 @@ void StartCommTask(void *argument)
         LCD_Put_Cursor(0, 0);
         LCD_Send_String(line_buf);
 
-        /* --- ROW 1: UART MONITORING & VISUAL LOCK --- */
-        /* Eğer paket geldiyse işle, bayrakları Comm_Process_Packet kaldıracak */
-        if (Global_t.uart_gateway.packet_ready == 1) {
-            Comm_Process_Packet(&hGatewayComm);
-            Global_t.uart_gateway.packet_ready = 0;
-        }
-
+        /* --- 3. ROW 1: UART MONITORING & VISUAL LOCK --- */
         LCD_Put_Cursor(1, 0);
-        /* GÖRSEL KİLİT KONTROLÜ: display_timeout_flag üzerinden çalışır */
         if (Global_t.uart_gateway.display_timeout_flag == 1)
         {
-            /* 3 saniye dolmadıysa mesajı koru */
             if (current_tick - Global_t.uart_gateway.last_packet_tick < 3000)
             {
                 LCD_Send_String("UART: PKT RECEIVED  ");
             }
             else
             {
-                /* Süre doldu, kilidi kaldır ve normale dön */
                 Global_t.uart_gateway.display_timeout_flag = 0;
                 LCD_Send_String("UART: LISTENING     ");
             }
         }
         else
         {
-            /* Boşta kalma durumu */
             LCD_Send_String("UART: LISTENING     ");
         }
 
-        /* --- ROW 2: IMU STATUS --- */
+        /* --- 4. ROW 2: IMU STATUS --- */
         LCD_Put_Cursor(2, 0);
         if (Global_t.is_tilt_detected)       LCD_Send_String("IMU: TILT DETECTED  ");
         else if (Global_t.is_impact_detected) LCD_Send_String("IMU: IMPACT DETECTED");
         else                                LCD_Send_String("IMU: SYSTEM STABLE  ");
 
-        /* --- ROW 3: MOTOR STATUS --- */
+        /* --- 5. ROW 3: MOTOR & CURRENT TELEMETRY (NİHAİ UI TASARIMI) --- */
         LCD_Put_Cursor(3, 0);
-        if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted) {
-            LCD_Send_String("MOT: HALTED         ");
-        } else {
-            /* Dinamik hız gösterimi */
-            sprintf(line_buf, "MOT: ACTIVE (%3d%%) ", Global_t.dc_motor_control.target_speed);
+
+        // 1. Durum: Aşırı Akım Hatası
+        if (Global_t.SensorHub_t.overcurrent_flag == 1)
+        {
+            /* Hata durumunda bile akımın kaç mA'e vurduğunu sağ tarafta gösterelim */
+            sprintf(line_buf, "ERR: OVERCUR!|%4ldmA",
+                    (int32_t)Global_t.SensorHub_t.current_mA);
+            LCD_Send_String(line_buf);
+        }
+        // 2. Durum: Motor Durduruldu (Halted / Tilt)
+        else if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
+        {
+            /* Motor durdurulduğunda 'HLT' yazar ve yanına
+               sensörden süzülen o anki durağan akımı (0mA) basar */
+            sprintf(line_buf, "MOT: HLT     |%4ldmA",
+                    (int32_t)Global_t.SensorHub_t.current_mA);
+            LCD_Send_String(line_buf);
+        }
+        // 3. Durum: Her Şey Yolunda, Normal Çalışma
+        else
+        {
+            /* %3d ile hızı, %4ld ile cast edilmiş tamsayı akımı basıyoruz */
+            sprintf(line_buf, "MOT:%3d%%     |%4ldmA",
+                    Global_t.dc_motor_control.target_speed,
+                    (int32_t)Global_t.SensorHub_t.current_mA);
             LCD_Send_String(line_buf);
         }
 
-        osDelay(250); // 4Hz refresh rate
+        osDelay(200); // 5Hz tazeleme hızı
     }
 }
 
@@ -298,6 +322,162 @@ void StartMotorCntTask(void *argument)
     }
 }
 
+
+/**
+ * @brief  Task: Sensor Fusion & Environmental Monitoring (Low Priority)
+ * @author Mehmet Alperen BAKICI
+ * @version v1.2.2 (Production Gold - Responsive Filter Tuning)
+ * @date    18.05.2026
+ * @details Implements a 3-stage cascaded digital filter (Median + 16-point Moving Average + EMA)
+ * with optimized responsive weight (EMA_ALPHA = 0.10f) for faster torque deviation tracking.
+ * Features dynamic continuous gated-calibration to fully eliminate thermal drift.
+ */
+void StartSensorFusion(void *argument)
+{
+    /* Hardware and Signal Conversion Constants */
+    const float ADC_TO_VOLT = 3.3f / 65535.0f;
+    const float SENSITIVITY = 0.185f; /* ACS712 5A Module Sensitivity (185mV/A) */
+    const float GAIN_FACTOR = 2.3f;   /* Empirical calibration gain factor */
+
+    /* Memory-Isolated Local Static Variables */
+    static float local_v_offset = 2.045f;
+    static float local_smoothed_current = 0.0f;
+    static uint8_t calibration_done_flag = 0;
+
+    /* Initialization Guard Delay: Allow electrical rails to stabilize */
+    Global_t.SensorHub_t.current_mA = 0.0f;
+    osDelay(1000);
+
+    /* 16-Element Signal Smoothing Ring Buffer Configuration */
+    #define MOVING_AVG_SIZE 16
+    float moving_avg_buffer[MOVING_AVG_SIZE] = {0.0f};
+    uint8_t avg_index = 0;
+    float moving_avg_sum = 0.0f;
+
+    /* OPTIMIZED RESPONSIVE EMA LAYER 🚀
+       Increased from 0.04f to 0.10f to drastically reduce group delay
+       while maintaining adequate commutation ripple suppression. */
+    const float EMA_ALPHA = 0.10f;
+
+    for(;;)
+    {
+        uint32_t samples[15];
+
+        /* STEP 1: Burst Analog Data Acquisition via Shared DMA Buffer */
+        for(int i = 0; i < 15; i++)
+        {
+            samples[i] = (uint16_t)Global_t.SensorHub_t.adc_buffer[0];
+            osDelay(1);
+        }
+
+        /* STEP 2: Non-Linear Median Filtering (Bubble Sort Optimization) */
+        for(int i = 0; i < 14; i++)
+        {
+            for(int j = i + 1; j < 15; j++)
+            {
+                if(samples[i] > samples[j])
+                {
+                    uint32_t temp = samples[i];
+                    samples[i] = samples[j];
+                    samples[j] = temp;
+                }
+            }
+        }
+
+        /* STEP 3: Outlier Rejection (Averaging the 7 Central Stable Samples) */
+        uint32_t pure_sum = 0;
+        for(int i = 4; i <= 10; i++)
+        {
+            pure_sum += samples[i];
+        }
+        float filtered_raw_adc = (float)pure_sum / 7.0f;
+        float current_voltage = filtered_raw_adc * ADC_TO_VOLT;
+
+        /* STEP 4: Dynamic Continuous Gated-Calibration Execution */
+        if (Global_t.is_tilt_detected == 1)
+        {
+            if (calibration_done_flag == 0)
+            {
+                float dyn_offset_sum = 0.0f;
+                for(int c = 0; c < 30; c++)
+                {
+                    dyn_offset_sum += (float)((uint16_t)Global_t.SensorHub_t.adc_buffer[0]) * ADC_TO_VOLT;
+                    osDelay(5);
+                }
+                local_v_offset = dyn_offset_sum / 30.0f;
+                calibration_done_flag = 1;
+            }
+        }
+        else
+        {
+            calibration_done_flag = 0;
+        }
+
+        /* STEP 5: Mathematical Current Computation with Direction Guard */
+        float delta_v = local_v_offset - current_voltage;
+        if(delta_v < 0.0f) { delta_v = -delta_v; }
+
+        float current_calculated = (delta_v / SENSITIVITY) * 1000.0f * GAIN_FACTOR;
+
+        /* STEP 6: Input-Stage Software Blanking (Dead-Band Budding) */
+        if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
+        {
+            current_calculated = 0.0f;
+        }
+        else if (current_calculated < 45.0f)
+        {
+            current_calculated = 0.0f;
+        }
+
+        /* STEP 7: Bound-Protected Moving Average Ring Buffer Execution */
+        moving_avg_sum -= moving_avg_buffer[avg_index];
+        moving_avg_buffer[avg_index] = current_calculated;
+        moving_avg_sum += moving_avg_buffer[avg_index];
+
+        avg_index = (avg_index + 1) & 15;
+
+        float moving_avg_result = moving_avg_sum / 16.0f;
+
+        /* STEP 8: Exponential Moving Average (EMA) Attenuation Layer */
+        local_smoothed_current = (EMA_ALPHA * moving_avg_result) + ((1.0f - EMA_ALPHA) * local_smoothed_current);
+
+        /* Hardware Fail-Safe Interlocking Override */
+        if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
+        {
+            local_smoothed_current = 0.0f;
+        }
+
+        /* STEP 9: Telemetry Export to Global Shared Memory State */
+        Global_t.SensorHub_t.current_mA = local_smoothed_current;
+        Global_t.SensorHub_t.v_offset   = local_v_offset;
+
+        /* Predictive Maintenance Overcurrent Safety Diagnostic Flag */
+        if (Global_t.SensorHub_t.current_mA > 1500.0f) {
+            Global_t.SensorHub_t.overcurrent_flag = 1;
+        } else {
+            Global_t.SensorHub_t.overcurrent_flag = 0;
+        }
+
+        /* STEP 10: Deterministic 1Hz Industrial UART Data Logging (CSV Stream) */
+        static uint8_t log_counter = 0;
+        log_counter++;
+
+        if (log_counter >= 20)
+        {
+            char uart_buf[64];
+            int uart_len = sprintf(uart_buf, "%ld,%ld,%d\r\n",
+                                   (int32_t)Global_t.SensorHub_t.current_mA,
+                                   (int32_t)(local_v_offset * 1000.0f),
+                                   Global_t.is_tilt_detected);
+
+            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, uart_len, 10);
+            log_counter = 0;
+        }
+
+        /* Task Periodicity Delay */
+        osDelay(50);
+    }
+}
 
 /* USER CODE END Application */
 

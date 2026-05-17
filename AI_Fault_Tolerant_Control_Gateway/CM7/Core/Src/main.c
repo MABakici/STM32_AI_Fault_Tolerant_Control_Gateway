@@ -67,6 +67,9 @@ ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT] __attribute__((section(".TxDecr
 
 ETH_TxPacketConfig TxConfig;
 
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
 ETH_HandleTypeDef heth;
 
 I2C_HandleTypeDef hi2c1;
@@ -114,6 +117,13 @@ const osThreadAttr_t MotorCntTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for SensorFusion */
+osThreadId_t SensorFusionHandle;
+const osThreadAttr_t SensorFusion_attributes = {
+  .name = "SensorFusion",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for I2C2_Mutex */
 osMutexId_t I2C2_MutexHandle;
 const osMutexAttr_t I2C2_Mutex_attributes = {
@@ -133,11 +143,13 @@ static void MX_I2C1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_ETH_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_ADC1_Init(void);
 void StartIMUReadTask(void *argument);
 void StartAnalysisTask(void *argument);
 void StartHeartbeatTask(void *argument);
 void StartCommTask(void *argument);
 void StartMotorCntTask(void *argument);
+void StartSensorFusion(void *argument);
 
 /* USER CODE BEGIN PFP */
 /* USER CODE END PFP */
@@ -211,6 +223,7 @@ HSEM notification */
   MX_I2C2_Init();
   MX_ETH_Init();
   MX_TIM3_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
   //!< Ilk ayarlamalari yapiyoruz.
@@ -255,6 +268,9 @@ HSEM notification */
 
   /* creation of MotorCntTask */
   MotorCntTaskHandle = osThreadNew(StartMotorCntTask, NULL, &MotorCntTask_attributes);
+
+  /* creation of SensorFusion */
+  SensorFusionHandle = osThreadNew(StartSensorFusion, NULL, &SensorFusion_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -335,6 +351,74 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_MultiModeTypeDef multimode = {0};
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV128;
+  hadc1.Init.Resolution = ADC_RESOLUTION_16B;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ConversionDataManagement = ADC_CONVERSIONDATA_DMA_CIRCULAR;
+  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
+  hadc1.Init.OversamplingMode = DISABLE;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure the ADC multi-mode
+  */
+  multimode.Mode = ADC_MODE_INDEPENDENT;
+  if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_15;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_810CYCLES_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  sConfig.Offset = 0;
+  sConfig.OffsetSignedSaturation = DISABLE;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -642,6 +726,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
 
 }
 
@@ -696,6 +783,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
 /**
  * @brief  System Initialization Command Handler
  */
@@ -832,6 +920,24 @@ __weak void StartMotorCntTask(void *argument)
     osDelay(1);
   }
   /* USER CODE END StartMotorCntTask */
+}
+
+/* USER CODE BEGIN Header_StartSensorFusion */
+/**
+* @brief Function implementing the SensorFusion thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartSensorFusion */
+__weak void StartSensorFusion(void *argument)
+{
+  /* USER CODE BEGIN StartSensorFusion */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartSensorFusion */
 }
 
 /**

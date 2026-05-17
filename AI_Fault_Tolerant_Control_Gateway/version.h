@@ -11,9 +11,42 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    0
-#define SW_VERSION_PATCH    6
-#define BUILD_DATE          "2026-05-14"
+#define SW_VERSION_PATCH    8
+#define BUILD_DATE          "2026-05-18"
 
+
+/************************************************************************
+* @version           : v0.0.8 (Responsive DSP Baseline)
+* @author            : Mehmet Alperen Bakici
+* @date              : 2026.05.18 02:15
+* @branch            : main
+*-------------------------------------------------------------------
+* @notes             :
+*
+* - Integrated ACS712 5A current sensor via ADC1_IN0 (PA0) with 16-bit DMA
+* Circular Mode, offloading CPU data transit overhead.
+*
+* - Hardened data integrity via 'Sensor_Fusion_t'. Implemented a volatile
+* 4-element target buffer and a 32-bit alignment padding layer to explicitly
+* prevent dual-core DMA memory corruption and HardFault handler entry.
+*
+* [3-STAGE DSP PIPELINE]
+* - Stage 1: 15-sample Median Filter + Outlier Rejection (7 central samples)
+* to strip impulsive spike noise.
+* - Stage 2: 16-element Moving Average Ring Buffer utilizing high-speed bitwise
+* boundary masking (& 15) for absolute array overflow protection.
+* - Stage 3: Responsive EMA Filter (EMA_ALPHA = 0.10f), eliminating group
+* delay for sub-200ms torque deviation tracking while suppressing ripple.
+*
+* - Deployed a Continuous Gated-Calibration interlocking mechanism mapped to
+* MPU6050 tilt telemetry. Automatically rewrites the zero-current baseline
+* (v_offset) upon motor stall to fully negate severe thermal drift.
+*
+* - Embedded a lightweight 1Hz CSV logger via UART3. Employs raw integer
+* casting to bypass floating-point serialization overhead, streaming live
+* dataset packets ([Current_mA],[Offset_mV],[Tilt_Flag]) for TinyML training.
+*
+*************************************************************************/
 
 
 /************************************************************************

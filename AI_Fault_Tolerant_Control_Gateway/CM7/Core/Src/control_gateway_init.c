@@ -10,7 +10,7 @@ extern UART_HandleTypeDef huart3;
 extern I2C_HandleTypeDef hi2c1;
 extern I2C_HandleTypeDef hi2c2;
 extern TIM_HandleTypeDef htim3;
-
+extern ADC_HandleTypeDef hadc1;
 
 /**********************************************************************************
  * @author    Mehmet Alperen BAKICI
@@ -44,6 +44,9 @@ void AI_Based_Fault_Tolerant_Control_Gateway_Init(void)
 
     /* Enable UART IDLE Interrupt */
     __HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
+
+    /* ADC1'i DMA modunda başlatıp veriyi direkt SensorHub_t yapısının içine akıtıyoruz */
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)Global_t.SensorHub_t.adc_buffer, 1);
 
     Serial_Log_Message("[INFO] System startup sequence finalized.\r\n");
 }
