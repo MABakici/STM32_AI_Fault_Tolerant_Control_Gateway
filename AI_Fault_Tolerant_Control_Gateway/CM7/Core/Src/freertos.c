@@ -30,7 +30,7 @@
 #include "mpu6050.h"
 #include "global_variables_CM7.h"
 #include "control_gateway_comm_handler.h"
-
+#include "control_gateway_sensor_hub.h"
 extern I2C_HandleTypeDef hi2c2;
 
 /* External handle for USART3 defined in main.c */
@@ -64,6 +64,7 @@ extern osMutexId_t I2C2_MutexHandle;
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+
 
 /**
  * @brief  Task 1: Sensor Data Acquisition (High Priority)
@@ -156,20 +157,39 @@ void StartAnalysisTask(void *argument)
 }
 
 /**
- * @brief  Task 3: System Heartbeat (Low Priority)
+ * @brief  Task 3: System Heartbeat & Climate Monitoring (Low Priority)
  * @author Mehmet Alperen BAKICI
- * @date   14.05.2026
- * @details Toggles Yellow LED to indicate scheduler and system health.
+ * @details Toggles Yellow LED at 1Hz and safely polls DHT11 climate metrics
+ * at a deterministic 1Hz frequency using the new modular sensor hub driver.
  */
 void StartHeartbeatTask(void *argument)
 {
+  float temp_c = 0.0f;
+  float hum_pct = 0.0f;
+
+  /* CRITICAL: Must be static to persist across FreeRTOS context switches */
+  static uint8_t dht11_timer_cnt = 0;
+
   for(;;)
   {
+    /* --- 1. LED TOGGLE (Heartbeat) --- */
     if ( Global_t.mpu6050_veriler.is_initialized )
     {
-      /* 1Hz toggling frequency (500ms ON / 500ms OFF) */
       HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
     }
+
+    /* --- 2. DETERMINISTIC 1Hz DHT11 POLLING --- */
+    dht11_timer_cnt++;
+    if (dht11_timer_cnt >= 2) /* 2 loops * 500ms = 1000ms (1Hz) */
+    {
+      if (DHT11_Read_Raw(&temp_c, &hum_pct))
+      {
+        Global_t.SensorHub_t.temperature_C = temp_c;
+        Global_t.SensorHub_t.humidity_pct  = hum_pct;
+      }
+      dht11_timer_cnt = 0;
+    }
+
     osDelay(500);
   }
 }
@@ -177,21 +197,22 @@ void StartHeartbeatTask(void *argument)
 /**
  * @brief  Task: Communication & UI Gateway (Normal Priority)
  * @author Mehmet Alperen BAKICI
- * @date   16.05.2026
- * @details Handles UART packet processing and orchestrates 20x4 LCD
- * telemetry display including Uptime, IMU status, Motor states,
- * and real-time ACS712 current sensing transients.
+ * @version v1.0.0 (Fixed-Grid Industrial UI Production Baseline)
+ * @date   19.05.2026
+ * @details Handles UART DMA packet processing and orchestrates the 20x4 LCD
+ * telemetry display with pixel-perfect vertical layout alignment.
+ * Fixed-grid system locks vertical separators (|) strictly at column 12.
  */
 void StartCommTask(void *argument)
 {
-    char line_buf[21];
+    char line_buf[32]; // Hardened layout buffer against format-overflow constraints
     uint32_t sec = 0, min = 0, hour = 0;
     Comm_Handle_t hGatewayComm = {
         .pRxBuffer     = Global_t.uart_gateway.rx_buffer,
         .pErrorCounter = &Global_t.uart_gateway.uart_error_cnt
     };
 
-    /* DMA'yı başlat */
+    /* Start UART ring buffer pipeline via DMA link */
     HAL_UART_Receive_DMA(&huart3, Global_t.uart_gateway.rx_buffer, FRAME_LENGTH);
     LCD_Clear();
     osDelay(100);
@@ -200,82 +221,91 @@ void StartCommTask(void *argument)
     {
         uint32_t current_tick = HAL_GetTick();
 
-        /* --- 1. PAKET İ�?LEME MANTI�?I --- */
+        /* --- 1. UART PACKET PROCESSING ENGINE --- */
         if (Global_t.uart_gateway.packet_ready == 1)
         {
             Comm_Process_Packet(&hGatewayComm);
 
-            /* Zaman damgasını ve görsel kilit bayrağını güncelle */
+            /* Update telemetry timestamp and fire visual lock flag */
             Global_t.uart_gateway.last_packet_tick = current_tick;
             Global_t.uart_gateway.display_timeout_flag = 1;
 
             Global_t.uart_gateway.packet_ready = 0;
         }
 
-        /* --- 2. ROW 0: UPTIME --- */
+        /* --- 2. ROW 0: UPTIME & TEMPERATURE TELEMETRY --- */
         sec = (current_tick / 1000) % 60;
         min = (current_tick / 60000) % 60;
         hour = (current_tick / 3600000);
-        sprintf(line_buf, "UPTIME: %02lu:%02lu:%02lu    ", hour, min, sec);
+
+        /* Left side: 12 chars, Separator: 1 char, Right side: 7 chars = Exactly 20 chars */
+        sprintf(line_buf, "UPT:%02lu:%02lu:%02lu| T:%2ldC ",
+                hour, min, sec,
+                (int32_t)Global_t.SensorHub_t.temperature_C);
         LCD_Put_Cursor(0, 0);
         LCD_Send_String(line_buf);
 
-        /* --- 3. ROW 1: UART MONITORING & VISUAL LOCK --- */
+        /* --- 3. ROW 1: UART NETWORK MONITORING & VISUAL LOCK --- */
         LCD_Put_Cursor(1, 0);
         if (Global_t.uart_gateway.display_timeout_flag == 1)
         {
             if (current_tick - Global_t.uart_gateway.last_packet_tick < 3000)
             {
-                LCD_Send_String("UART: PKT RECEIVED  ");
+                LCD_Send_String("UART:PKT RECEIVED   "); // Exactly 20 characters
             }
             else
             {
                 Global_t.uart_gateway.display_timeout_flag = 0;
-                LCD_Send_String("UART: LISTENING     ");
+                LCD_Send_String("UART:LISTENING      "); // Exactly 20 characters
             }
         }
         else
         {
-            LCD_Send_String("UART: LISTENING     ");
+            LCD_Send_String("UART:LISTENING      "); // Exactly 20 characters
         }
 
-        /* --- 4. ROW 2: IMU STATUS --- */
+        /* --- 4. ROW 2: IMU STATUS & HUMIDITY TELEMETRY --- */
         LCD_Put_Cursor(2, 0);
-        if (Global_t.is_tilt_detected)       LCD_Send_String("IMU: TILT DETECTED  ");
-        else if (Global_t.is_impact_detected) LCD_Send_String("IMU: IMPACT DETECTED");
-        else                                LCD_Send_String("IMU: SYSTEM STABLE  ");
 
-        /* --- 5. ROW 3: MOTOR & CURRENT TELEMETRY (NİHAİ UI TASARIMI) --- */
-        LCD_Put_Cursor(3, 0);
-
-        // 1. Durum: Aşırı Akım Hatası
-        if (Global_t.SensorHub_t.overcurrent_flag == 1)
+        /* %-12s guarantees that left token is left-padded to 12 chars dynamically */
+        if (Global_t.is_tilt_detected)
         {
-            /* Hata durumunda bile akımın kaç mA'e vurduğunu sağ tarafta gösterelim */
-            sprintf(line_buf, "ERR: OVERCUR!|%4ldmA",
-                    (int32_t)Global_t.SensorHub_t.current_mA);
-            LCD_Send_String(line_buf);
+            sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:TILT", (int32_t)Global_t.SensorHub_t.humidity_pct);
         }
-        // 2. Durum: Motor Durduruldu (Halted / Tilt)
-        else if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
+        else if (Global_t.is_impact_detected)
         {
-            /* Motor durdurulduğunda 'HLT' yazar ve yanına
-               sensörden süzülen o anki durağan akımı (0mA) basar */
-            sprintf(line_buf, "MOT: HLT     |%4ldmA",
-                    (int32_t)Global_t.SensorHub_t.current_mA);
-            LCD_Send_String(line_buf);
+            sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:IMPACT", (int32_t)Global_t.SensorHub_t.humidity_pct);
         }
-        // 3. Durum: Her Şey Yolunda, Normal Çalışma
         else
         {
-            /* %3d ile hızı, %4ld ile cast edilmiş tamsayı akımı basıyoruz */
-            sprintf(line_buf, "MOT:%3d%%     |%4ldmA",
-                    Global_t.dc_motor_control.target_speed,
-                    (int32_t)Global_t.SensorHub_t.current_mA);
-            LCD_Send_String(line_buf);
+            sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:STABLE", (int32_t)Global_t.SensorHub_t.humidity_pct);
         }
+        LCD_Send_String(line_buf);
 
-        osDelay(200); // 5Hz tazeleme hızı
+        /* --- 5. ROW 3: MOTOR ACTUATOR & CURRENT TRANSIENT MONITORING --- */
+        LCD_Put_Cursor(3, 0);
+
+        // State Alpha: Fault Condition (Overcurrent Overload)
+        if (Global_t.SensorHub_t.overcurrent_flag == 1)
+        {
+            sprintf(line_buf, "%-12s|%4ldmA", "ERR:OVERCUR!", (int32_t)Global_t.SensorHub_t.current_mA);
+        }
+        // State Beta: Safety Shutdown (System Halted via Flight Interlock)
+        else if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
+        {
+            sprintf(line_buf, "%-12s|%4ldmA", "MOT:HLT", (int32_t)Global_t.SensorHub_t.current_mA);
+        }
+        // State Gamma: Nominal Execution Mode
+        else
+        {
+            char speed_str[16];
+            sprintf(speed_str, "MOT:%3d%%", Global_t.dc_motor_control.target_speed);
+            sprintf(line_buf, "%-12s|%4ldmA", speed_str, (int32_t)Global_t.SensorHub_t.current_mA);
+        }
+        LCD_Send_String(line_buf);
+
+        /* Deterministic 5Hz interface refresh grid pace */
+        osDelay(200);
     }
 }
 
@@ -454,19 +484,24 @@ void StartSensorFusion(void *argument)
             Global_t.SensorHub_t.overcurrent_flag = 0;
         }
 
-        /* STEP 10: Deterministic 1Hz Industrial UART Data Logging (CSV Stream) */
+        /* STEP 10: Deterministic 1Hz Industrial UART Data Logging (Extended CSV Stream) */
         static uint8_t log_counter = 0;
         log_counter++;
 
-        if (log_counter >= 20)
+        if (log_counter >= 15) /* Calibrated to achieve precise ~1Hz streaming */
         {
-            char uart_buf[64];
-            int uart_len = sprintf(uart_buf, "%ld,%ld,%d\r\n",
+        	char uart_buf[128]; // Expanded buffer size for extended dataset
+
+            /* Extended Format for TinyML: [Current_mA],[Offset_mV],[Tilt_Flag],[Temp_C],[Hum_Pct]
+             * All formats converted to %ld to perfectly match (int32_t) casting. */
+            int uart_len = sprintf(uart_buf, "%ld,%ld,%ld,%ld,%ld\r\n",
                                    (int32_t)Global_t.SensorHub_t.current_mA,
                                    (int32_t)(local_v_offset * 1000.0f),
-                                   Global_t.is_tilt_detected);
+                                   (int32_t)Global_t.is_tilt_detected,
+                                   (int32_t)Global_t.SensorHub_t.temperature_C,
+                                   (int32_t)Global_t.SensorHub_t.humidity_pct);
 
-            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, uart_len, 10);
+            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, uart_len, 15);
             log_counter = 0;
         }
 

@@ -10,10 +10,37 @@
 /* Version Definitions */
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
-#define SW_VERSION_MINOR    0
-#define SW_VERSION_PATCH    9
-#define BUILD_DATE          "2026-05-18"
+#define SW_VERSION_MINOR    1
+#define SW_VERSION_PATCH    0
+#define BUILD_DATE          "2026-05-19"
 
+
+
+/************************************************************************
+* @version           : v0.1.0
+* @author            : Mehmet Alperen Bakici
+* @date              : 2026.05.19 02:40
+* @branch            : main
+*-------------------------------------------------------------------
+* @notes             :
+*
+* - RTOS Hardening & Memory Allocation:
+* - Mitigated 3-second scheduler starvation hangs by balancing task
+* stacks (256/512 Words) and expanding TOTAL_HEAP_SIZE to 48KB.
+*
+* - Dynamic I/O Shift Driver Mnemonic:
+* - Developed an atomic, register-level directional switching loop
+* (Input/Output) on PD0 to achieve non-blocking 1-Wire DHT11 polling.
+*
+* - Industrial Signal Hardware Doping:
+* - Reconfigured telemetry line to active Push-Pull with internal
+* pull-up paired with a physical 5V rail shift for steep microsecond edge transitions.
+*
+* - DSP Fusion & Fixed-Grid UI Matrix:
+* - Synchronized the 3-stage cascaded current filter stream with
+* deterministic 1Hz climate telemetry on a symmetric, fixed-grid 20x4 LCD layout.
+*
+*************************************************************************/
 
 
 /************************************************************************
