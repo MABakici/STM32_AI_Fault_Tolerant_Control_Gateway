@@ -11,8 +11,27 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    0
-#define SW_VERSION_PATCH    8
+#define SW_VERSION_PATCH    9
 #define BUILD_DATE          "2026-05-18"
+
+
+
+/************************************************************************
+* @version           : v0.0.9
+* @author            : Mehmet Alperen Bakici
+* @date              : 2026.05.19 00:20
+* @branch            : main
+*-------------------------------------------------------------------
+* @notes             :
+*
+* - Boot Calibration | 50-sample synchronous 'ACS712_PowerOn_Calibration'
+*                      commits v_offset before RTOS starts.
+* - DSP Pipeline     | Strict Median (Index 7) + 16-MA Ring Buffer (&15) +
+*                      Stable EMA (Alpha = 0.07f).
+* - Telemetry & AI   | Eliminates false ripples; preserves sharp sub-300ms
+*                      anomaly tracking for TinyML dataset.
+*
+*************************************************************************/
 
 
 /************************************************************************

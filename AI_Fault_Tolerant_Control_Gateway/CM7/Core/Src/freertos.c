@@ -31,7 +31,6 @@
 #include "global_variables_CM7.h"
 #include "control_gateway_comm_handler.h"
 
-extern I2C_HandleTypeDef hi2c1;
 extern I2C_HandleTypeDef hi2c2;
 
 /* External handle for USART3 defined in main.c */
@@ -323,14 +322,15 @@ void StartMotorCntTask(void *argument)
 }
 
 
+
 /**
  * @brief  Task: Sensor Fusion & Environmental Monitoring (Low Priority)
  * @author Mehmet Alperen BAKICI
- * @version v1.2.2 (Production Gold - Responsive Filter Tuning)
- * @date    18.05.2026
- * @details Implements a 3-stage cascaded digital filter (Median + 16-point Moving Average + EMA)
- * with optimized responsive weight (EMA_ALPHA = 0.10f) for faster torque deviation tracking.
- * Features dynamic continuous gated-calibration to fully eliminate thermal drift.
+ * @version v0.0.8 (Production Baseline - Heavy Cascaded Filter)
+ * @date    19.05.2026
+ * @details Implements a stable 3-stage cascaded digital filter (Strict Median +
+ * 16-point Moving Average + Constant Heavy EMA) to eliminate erratic fırça spikes.
+ * Fully hardfault protected and synchronized with power-on calibration.
  */
 void StartSensorFusion(void *argument)
 {
@@ -340,13 +340,15 @@ void StartSensorFusion(void *argument)
     const float GAIN_FACTOR = 2.3f;   /* Empirical calibration gain factor */
 
     /* Memory-Isolated Local Static Variables */
-    static float local_v_offset = 2.045f;
+    static float local_v_offset;
     static float local_smoothed_current = 0.0f;
     static uint8_t calibration_done_flag = 0;
 
-    /* Initialization Guard Delay: Allow electrical rails to stabilize */
-    Global_t.SensorHub_t.current_mA = 0.0f;
-    osDelay(1000);
+    /* Pull the fresh baseline established by the synchronous Power-On initialization */
+    local_v_offset = Global_t.SensorHub_t.v_offset;
+
+    /* Initialization Guard Delay */
+    osDelay(500);
 
     /* 16-Element Signal Smoothing Ring Buffer Configuration */
     #define MOVING_AVG_SIZE 16
@@ -354,10 +356,10 @@ void StartSensorFusion(void *argument)
     uint8_t avg_index = 0;
     float moving_avg_sum = 0.0f;
 
-    /* OPTIMIZED RESPONSIVE EMA LAYER 🚀
-       Increased from 0.04f to 0.10f to drastically reduce group delay
-       while maintaining adequate commutation ripple suppression. */
-    const float EMA_ALPHA = 0.10f;
+    /* CONSTANT HEAVY EMA LAYER 🚀
+     * Locked to 0.07f to permanently suppress brushed DC commutation ripple
+     * and avoid self-triggering false current spikes during nominal flight. */
+    const float EMA_ALPHA_HEAVY = 0.07f;
 
     for(;;)
     {
@@ -384,13 +386,9 @@ void StartSensorFusion(void *argument)
             }
         }
 
-        /* STEP 3: Outlier Rejection (Averaging the 7 Central Stable Samples) */
-        uint32_t pure_sum = 0;
-        for(int i = 4; i <= 10; i++)
-        {
-            pure_sum += samples[i];
-        }
-        float filtered_raw_adc = (float)pure_sum / 7.0f;
+        /* STEP 3: Strict Median Extraction
+         * Extract exactly the center sample (Index 7) to block asymmetrical spikes. */
+        float filtered_raw_adc = (float)samples[7];
         float current_voltage = filtered_raw_adc * ADC_TO_VOLT;
 
         /* STEP 4: Dynamic Continuous Gated-Calibration Execution */
@@ -435,11 +433,10 @@ void StartSensorFusion(void *argument)
         moving_avg_sum += moving_avg_buffer[avg_index];
 
         avg_index = (avg_index + 1) & 15;
-
         float moving_avg_result = moving_avg_sum / 16.0f;
 
-        /* STEP 8: Exponential Moving Average (EMA) Attenuation Layer */
-        local_smoothed_current = (EMA_ALPHA * moving_avg_result) + ((1.0f - EMA_ALPHA) * local_smoothed_current);
+        /* STEP 8: Constant Heavy Smoothing Execution */
+        local_smoothed_current = (EMA_ALPHA_HEAVY * moving_avg_result) + ((1.0f - EMA_ALPHA_HEAVY) * local_smoothed_current);
 
         /* Hardware Fail-Safe Interlocking Override */
         if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
@@ -451,7 +448,6 @@ void StartSensorFusion(void *argument)
         Global_t.SensorHub_t.current_mA = local_smoothed_current;
         Global_t.SensorHub_t.v_offset   = local_v_offset;
 
-        /* Predictive Maintenance Overcurrent Safety Diagnostic Flag */
         if (Global_t.SensorHub_t.current_mA > 1500.0f) {
             Global_t.SensorHub_t.overcurrent_flag = 1;
         } else {
