@@ -155,57 +155,74 @@ void StartAnalysisTask(void *argument)
     osDelay(20);
   }
 }
-
 /**
- * @brief  Task 3: System Heartbeat & Climate Monitoring (Low Priority)
+ * @brief  Task 3: System Heartbeat & Optical/Climate Monitoring (Low Priority)
  * @author Mehmet Alperen BAKICI
- * @details Toggles Yellow LED at 1Hz and safely polls DHT11 climate metrics
- * at a deterministic 1Hz frequency using the new modular sensor hub driver.
+ * @date   2026.05.19
+ * @brief  Toggles the system heartbeat LED at 1Hz, samples the digital LDR state,
+ * and deterministically polls the DHT11 sensor at a 1Hz frequency.
  */
 void StartHeartbeatTask(void *argument)
 {
-  float temp_c = 0.0f;
-  float hum_pct = 0.0f;
+    float temp_c = 0.0f;
+    float hum_pct = 0.0f;
 
-  /* CRITICAL: Must be static to persist across FreeRTOS context switches */
-  static uint8_t dht11_timer_cnt = 0;
+    /* CRITICAL: Must be static to persist across FreeRTOS context switches */
+    static uint8_t dht11_timer_cnt = 0;
 
-  for(;;)
-  {
-    /* --- 1. LED TOGGLE (Heartbeat) --- */
-    if ( Global_t.mpu6050_veriler.is_initialized )
+    for(;;)
     {
-      HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-    }
+        /* --- STEP 1: HEARTBEAT LED INDICATOR (1Hz) --- */
+        if (Global_t.mpu6050_veriler.is_initialized)
+        {
+            HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+        }
 
-    /* --- 2. DETERMINISTIC 1Hz DHT11 POLLING --- */
-    dht11_timer_cnt++;
-    if (dht11_timer_cnt >= 2) /* 2 loops * 500ms = 1000ms (1Hz) */
-    {
-      if (DHT11_Read_Raw(&temp_c, &hum_pct))
-      {
-        Global_t.SensorHub_t.temperature_C = temp_c;
-        Global_t.SensorHub_t.humidity_pct  = hum_pct;
-      }
-      dht11_timer_cnt = 0;
-    }
+        /* --- STEP 2: LDR OPTICAL SAMPLING --- */
+        /* LM393 digital output driving logic:
+         * GPIO_PIN_SET   -> Ambient light drops below pot threshold (Darkness detected)
+         * GPIO_PIN_RESET -> Ambient light is sufficient (Well-lit environment) */
+        if (HAL_GPIO_ReadPin(LDR_PIN_GPIO_Port, LDR_PIN_Pin) == GPIO_PIN_SET)
+        {
+            Global_t.SensorHub_t.is_dark = 1; /* Contextual Anomaly Indicator: Environment is Dark */
+        }
+        else
+        {
+            Global_t.SensorHub_t.is_dark = 0; /* Nominal State: Environment is Well-Lit */
+        }
 
-    osDelay(500);
-  }
+        /* --- STEP 3: DETERMINISTIC 1Hz DHT11 CLIMATE POLLING --- */
+        dht11_timer_cnt++;
+        if (dht11_timer_cnt >= 2) /* 2 loops * 500ms = 1000ms scheduler period */
+        {
+            /* Explicit execution guard to clear outstanding scheduler ticks prior to 1-Wire burst */
+            osDelay(10);
+
+            if (DHT11_Read_Raw(&temp_c, &hum_pct))
+            {
+                Global_t.SensorHub_t.temperature_C = temp_c;
+                Global_t.SensorHub_t.humidity_pct  = hum_pct;
+            }
+            dht11_timer_cnt = 0;
+        }
+
+        /* Adjusted task loop timing block to maintain strict 500ms periodicity */
+        osDelay(490);
+    }
 }
 
 /**
  * @brief  Task: Communication & UI Gateway (Normal Priority)
  * @author Mehmet Alperen BAKICI
- * @version v1.0.0 (Fixed-Grid Industrial UI Production Baseline)
- * @date   19.05.2026
- * @details Handles UART DMA packet processing and orchestrates the 20x4 LCD
+ * @version v0.1.1 (Fixed-Grid Industrial UI - Telemetry Injection)
+ * @date   2026.05.19
+ * @brief  Handles UART DMA packet processing and orchestrates the 20x4 LCD
  * telemetry display with pixel-perfect vertical layout alignment.
- * Fixed-grid system locks vertical separators (|) strictly at column 12.
+ * The fixed-grid system locks vertical separators (|) strictly at column 12.
  */
 void StartCommTask(void *argument)
 {
-    char line_buf[32]; // Hardened layout buffer against format-overflow constraints
+    char line_buf[32]; /* Hardened layout buffer against format-overflow constraints */
     uint32_t sec = 0, min = 0, hour = 0;
     Comm_Handle_t hGatewayComm = {
         .pRxBuffer     = Global_t.uart_gateway.rx_buffer,
@@ -221,7 +238,7 @@ void StartCommTask(void *argument)
     {
         uint32_t current_tick = HAL_GetTick();
 
-        /* --- 1. UART PACKET PROCESSING ENGINE --- */
+        /* --- STEP 1: UART PACKET PROCESSING ENGINE --- */
         if (Global_t.uart_gateway.packet_ready == 1)
         {
             Comm_Process_Packet(&hGatewayComm);
@@ -233,7 +250,7 @@ void StartCommTask(void *argument)
             Global_t.uart_gateway.packet_ready = 0;
         }
 
-        /* --- 2. ROW 0: UPTIME & TEMPERATURE TELEMETRY --- */
+        /* --- STEP 2: ROW 0: UPTIME & TEMPERATURE TELEMETRY --- */
         sec = (current_tick / 1000) % 60;
         min = (current_tick / 60000) % 60;
         hour = (current_tick / 3600000);
@@ -242,29 +259,37 @@ void StartCommTask(void *argument)
         sprintf(line_buf, "UPT:%02lu:%02lu:%02lu| T:%2ldC ",
                 hour, min, sec,
                 (int32_t)Global_t.SensorHub_t.temperature_C);
+
         LCD_Put_Cursor(0, 0);
         LCD_Send_String(line_buf);
 
-        /* --- 3. ROW 1: UART NETWORK MONITORING & VISUAL LOCK --- */
+        /* --- STEP 3: ROW 1: UART NETWORK MONITORING & LDR STATUS --- */
         LCD_Put_Cursor(1, 0);
+
+        /* Select optical status mnemonic string based on the current LDR sensor state */
+        const char* ldr_str = (Global_t.SensorHub_t.is_dark == 1) ? "L:DRK" : "L:LGT";
+
         if (Global_t.uart_gateway.display_timeout_flag == 1)
         {
             if (current_tick - Global_t.uart_gateway.last_packet_tick < 3000)
             {
-                LCD_Send_String("UART:PKT RECEIVED   "); // Exactly 20 characters
+                /* "UART:RX_PACK" is 11 chars. %-12s expands it to exactly 12 chars. */
+                sprintf(line_buf, "%-12s| %s ", "UART:RX_PACK", ldr_str);
             }
             else
             {
                 Global_t.uart_gateway.display_timeout_flag = 0;
-                LCD_Send_String("UART:LISTENING      "); // Exactly 20 characters
+                /* "UART:LISTEN" is 11 chars. %-12s expands it to exactly 12 chars. */
+                sprintf(line_buf, "%-12s| %s ", "UART:LISTEN", ldr_str);
             }
         }
         else
         {
-            LCD_Send_String("UART:LISTENING      "); // Exactly 20 characters
+            sprintf(line_buf, "%-12s| %s ", "UART:LISTEN", ldr_str);
         }
+        LCD_Send_String(line_buf);
 
-        /* --- 4. ROW 2: IMU STATUS & HUMIDITY TELEMETRY --- */
+        /* --- STEP 4: ROW 2: IMU STATUS & HUMIDITY TELEMETRY --- */
         LCD_Put_Cursor(2, 0);
 
         /* %-12s guarantees that left token is left-padded to 12 chars dynamically */
@@ -282,20 +307,20 @@ void StartCommTask(void *argument)
         }
         LCD_Send_String(line_buf);
 
-        /* --- 5. ROW 3: MOTOR ACTUATOR & CURRENT TRANSIENT MONITORING --- */
+        /* --- STEP 5: ROW 3: MOTOR ACTUATOR & CURRENT TRANSIENT MONITORING --- */
         LCD_Put_Cursor(3, 0);
 
-        // State Alpha: Fault Condition (Overcurrent Overload)
+        /* State Alpha: Fault Condition (Overcurrent Overload) */
         if (Global_t.SensorHub_t.overcurrent_flag == 1)
         {
             sprintf(line_buf, "%-12s|%4ldmA", "ERR:OVERCUR!", (int32_t)Global_t.SensorHub_t.current_mA);
         }
-        // State Beta: Safety Shutdown (System Halted via Flight Interlock)
+        /* State Beta: Safety Shutdown (System Halted via Flight Interlock) */
         else if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
         {
             sprintf(line_buf, "%-12s|%4ldmA", "MOT:HLT", (int32_t)Global_t.SensorHub_t.current_mA);
         }
-        // State Gamma: Nominal Execution Mode
+        /* State Gamma: Nominal Execution Mode */
         else
         {
             char speed_str[16];

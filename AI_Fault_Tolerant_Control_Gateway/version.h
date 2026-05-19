@@ -11,8 +11,38 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    1
-#define SW_VERSION_PATCH    0
+#define SW_VERSION_PATCH    1
 #define BUILD_DATE          "2026-05-19"
+
+
+
+/************************************************************************
+* @version           : v0.1.1
+* @author            : Mehmet Alperen Bakici
+* @date              : 2026.05.20 00:10
+* @branch            : main
+*-------------------------------------------------------------------
+* @notes             :
+*
+* - Integrated digital LDR sampling on PD1 via LM393 comparator to inject
+*   real-time ambient light status into the multi-sensor dataset.
+*
+* - Restructured 'Sensor_Fusion_t' with strict 32-bit alignment limits
+*   and 40-byte structural packing to ensure padding-free RAM mapping.
+*
+* - Hardened the 20x4 LCD layout by shrinking UART strings to 12 chars,
+*   locking the vertical separator (|) rigidly at column 12 without skew.
+*
+*	LCD Screen View
+*   +--------------------+
+*   |UPT:00:00:27| T:27C |
+*   |UART:LISTEN | L:LGT |
+*   |IMU:STABLE  | H:54% |
+*   |MOT:50%     | 328mA |
+*   +--------------------+
+*
+*
+*************************************************************************/
 
 
 

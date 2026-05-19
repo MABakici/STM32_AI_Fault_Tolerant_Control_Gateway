@@ -24,21 +24,31 @@ typedef struct
 } Motor_Control_t;
 
 
-typedef struct {
-    /** DMA circular buffer. Sized to 4 elements to provide hardware-level
-        buffer overflow containment against accidental 32-bit word writes. */
-    volatile uint16_t adc_buffer[4];
+/**
+ * @brief  Hardened Sensor Fusion telemetry structure with explicit
+ * memory alignment and DMA hardware shielding.
+ * @note   Packed tightly to prevent compiler-inserted padding bytes.
+ */
+typedef struct __attribute__((packed)) {
 
-    /** Hardware memory shield (padding variable). Formally forces a 32-bit
-        alignment boundary to isolate DMA transactions from critical float variables. */
-    uint32_t memory_shield;
+    /* --- 32-Bit Aligned Variables (Floating Point Metrics) --- */
+    float current_mA;           // Filtered brushed DC motor current transients in mA */
+    float v_offset;             // Dynamically locked zero-current reference calibration in Volts */
+    float temperature_C;        // Ambient environmental temperature in Celsius from DHT11 */
+    float humidity_pct;         // Relative environmental humidity percentage from DHT11 */
+    float light_intensity;      // Scaled ambient light intensity (Reserved for analog LDR) */
 
-    float current_mA;         // Suppressed and calibrated brushed DC motor current in mA
-    float v_offset;           // Dynamically locked zero-current reference voltage in Volts
-    float temperature_C;      // Ambient environmental temperature in Celsius
-    float humidity_pct;       // Relative environmental humidity percentage
-    float light_intensity;    // Ambient light intensity telemetry
-    uint8_t overcurrent_flag; // Safety diagnostic flag: 1 if current exceeds 1500mA, else 0
-    uint8_t sensor_status_bm; // Bitmask representing telemetry health and peripheral status
+    /* --- DMA Hardware Isolation Zone --- */
+    uint32_t memory_shield;     // Explicit memory wall isolating DMA bursts from float variables */
+    volatile uint16_t adc_buffer[4]; /**< Hardware-level circular buffer for direct DMA ingestion */
+
+    /* --- 8-Bit Diagnostics & Boolean Flags --- */
+    uint8_t overcurrent_flag;   // Safety interlocking flag: 1 if current > 1500mA, else 0 */
+    uint8_t is_dark;            // Optical contextual flag: 1 if environment is dark, 0 if well-lit */
+    uint8_t sensor_status_bm;   // Bitmask representing telemetry health and peripheral status */
+
+    uint8_t structural_padding; // Formal byte alignment to keep total struct size a multiple of 4 */
+
 } Sensor_Fusion_t;
+
 #endif
