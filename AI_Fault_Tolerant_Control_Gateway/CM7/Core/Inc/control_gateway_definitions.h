@@ -83,6 +83,7 @@ typedef struct
     volatile uint32_t debug_25Hz_cnt;       /**< Target: Exactly 25 hits per second */
     volatile uint32_t debug_10Hz_cnt;       /**< Target: Exactly 10 hits per second */
     volatile uint32_t debug_5Hz_cnt;        /**< Target: Exactly 5 hits per second */
+    volatile uint32_t debug_1Hz_cnt;        /**< Target: Exactly 1 hits per second */
 
     /* --- Diagnostic System Metrics --- */
     uint32_t          scheduler_health_bm;

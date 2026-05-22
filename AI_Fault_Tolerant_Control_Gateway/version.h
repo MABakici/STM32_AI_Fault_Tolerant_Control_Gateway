@@ -11,8 +11,34 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    1
-#define SW_VERSION_PATCH    2
+#define SW_VERSION_PATCH    3
 #define BUILD_DATE          "2026-05-22"
+
+
+
+/************************************************************************
+* @version           : v0.1.3
+* @author            : Mehmet Alperen BAKICI
+* @date              : 2026.05.22 15:00
+* @branch            : main
+*-------------------------------------------------------------------
+* @notes             :
+*
+* - HARDWARE INDEPENDENT WATCHDOG (IWDG) SHIELD: Integrated a safety-critical
+* hardware watchdog co-allocated with the lowest priority 1Hz task. Configured
+* with a calculated 1500ms timeout window (LSI @32kHz, Prescaler 64, Reload 750)
+* to act as an implicit global monitor against CPU starvation and thread deadlocks.
+*
+* - RETENTION-AWARE BOOT-LOOP MITIGATION: Re-aligned the peripheral initialization
+* boundary by arming the IWDG subsystem immediately prior to osKernelStart(),
+* eliminating premature hardware timeouts caused by lengthy pre-scheduler routines.
+*
+* - BARE-METAL FAULT INJECTION ENGINE: Developed a low-level test routine bypassing
+* HAL abstraction layers to prevent clock grid dependencies. Directly manipulates the
+* USART3 Transmit Data Register (TDR) and monitors the hardware Transmission Complete (TC)
+* flag to ensure clear diagnostic warnings before executing deliberate execution blocks.
+*
+*************************************************************************/
 
 
 

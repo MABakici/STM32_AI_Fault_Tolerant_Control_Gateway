@@ -4,7 +4,7 @@
   * File Name          : freertos.c
   * Description        : Code for freertos applications (v0.2.0 TTC Core Baseline)
   * @author            : Mehmet Alperen BAKICI
-  * @date              : 2026.05.20
+  * @date              : 2026.05.22
   ******************************************************************************
   * @attention
   *
@@ -34,10 +34,12 @@
 #include "control_gateway_comm_handler.h"
 #include "control_gateway_sensor_hub.h"
 #include "semphr.h"
-extern I2C_HandleTypeDef hi2c2;
 
-/* External handle for USART3 defined in main.c */
+extern I2C_HandleTypeDef hi2c2;
 extern UART_HandleTypeDef huart3;
+
+/* Realigned with official CubeMX hardware peripheral naming convention */
+extern IWDG_HandleTypeDef hiwdg1;
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,11 +60,12 @@ extern UART_HandleTypeDef huart3;
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 extern osMutexId_t I2C2_MutexHandle;
+volatile uint8_t g_wdt_test_trigger = 0;
 /* USER CODE END Variables */
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
+void Process_Motor_Current_Resolution(void);
 /* USER CODE END FunctionPrototypes */
 
 /* Private application code --------------------------------------------------*/
@@ -97,8 +100,7 @@ void Start_1000Hz_Task(void *argument)
     {
         if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_1000Hz, portMAX_DELAY) == pdTRUE)
         {
-            /* Room 1000Hz: Pure Empty */
-
+            /* Room 1000Hz: Pure Empty reserved for hard real-time execution */
         }
     }
 }
@@ -115,7 +117,7 @@ void Start_500Hz_Task(void *argument)
     {
         if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_500Hz, portMAX_DELAY) == pdTRUE)
         {
-            /* Room 500Hz: Pure Empty */
+            /* Room 500Hz: Pure Empty reserved for high-frequency signal monitoring */
         }
     }
 }
@@ -132,7 +134,7 @@ void Start_250Hz_Task(void *argument)
     {
         if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_250Hz, portMAX_DELAY) == pdTRUE)
         {
-            /* Room 250Hz: Pure Empty */
+            /* Room 250Hz: Pure Empty reserved for high-speed dynamic control */
         }
     }
 }
@@ -154,7 +156,8 @@ void Start_100Hz_Task(void *argument)
         /* Strict 10ms hardware pace triggered from TIM5 ISR */
         if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_100Hz, portMAX_DELAY) == pdTRUE)
         {
-        	Global_t.TaskMgmt_t.debug_100Hz_cnt++;
+            Global_t.TaskMgmt_t.debug_100Hz_cnt++;
+
             /* --- STEP 1: MPU6050 DATA ACQUISITION --- */
             if (Global_t.mpu6050_veriler.is_initialized)
             {
@@ -216,7 +219,6 @@ void Start_100Hz_Task(void *argument)
     }
 }
 
-
 /**
  * @brief  Task Slot: 50Hz (20ms Periodicity) - Motor Actuation & Safety Control
  * @author Mehmet Alperen BAKICI
@@ -235,7 +237,7 @@ void Start_50Hz_Task(void *argument)
         /* Strict 20ms hardware cadence enforced by TIM5 master clock semaphore */
         if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_50Hz, portMAX_DELAY) == pdTRUE)
         {
-        	Global_t.TaskMgmt_t.debug_50Hz_cnt++;
+            Global_t.TaskMgmt_t.debug_50Hz_cnt++;
             /**
              * @section Safety Interlock Evaluation
              * Immediate motor shutdown triggered if physical tilt failure is active
@@ -257,7 +259,6 @@ void Start_50Hz_Task(void *argument)
         }
     }
 }
-
 
 /**
  * @brief  Task Slot: 10Hz (100ms Periodicity) - UI Refresh & Network Ingestion
@@ -294,9 +295,6 @@ void Start_10Hz_Task(void *argument)
         /* Enforced periodic cadence from the TIM5 hardware master interrupt via semaphore pipeline */
         if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_10Hz, portMAX_DELAY) == pdTRUE)
         {
-            /* 👑 TELEMETRY DIAGNOSTIC BOUNDARY:
-             * Placed strictly at the entry point of the 10Hz scheduler gate to maintain
-             * absolute time-domain accumulation accuracy regardless of subsequent conditional loops. */
             Global_t.TaskMgmt_t.debug_10Hz_cnt++;
 
             /* Cache real-time system clock reference locally */
@@ -400,14 +398,6 @@ void Start_10Hz_Task(void *argument)
     }
 }
 
-
-
-
-
-
-
-
-
 /**
  * @brief  Task Slot: 5Hz (200ms Periodicity) - Climate Ingestion & Current Resolution
  * @author Mehmet Alperen BAKICI
@@ -426,7 +416,6 @@ void Start_5Hz_Task(void *argument)
         /* Enforced periodic cadence from the TIM5 hardware master interrupt via semaphore pipeline */
         if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_5Hz, portMAX_DELAY) == pdTRUE)
         {
-            /* RUNTIME TELEMETRY DIAGNOSTIC: Increment deterministic slot tracker */
             Global_t.TaskMgmt_t.debug_5Hz_cnt++;
 
             /* --- SUB-ROUTINE A: RESOLVE CURRENT AND EXHAUST DSP PIPELINE (5Hz Rate) --- */
@@ -439,14 +428,11 @@ void Start_5Hz_Task(void *argument)
             if (dht11_decimation_cnt >= 5)
             {
                 /* --- CRITICAL SAFE ZONE: CAPTURE LOCKOUT --- */
-                /* Suspend FreeRTOS scheduler to fully preserve microsecond resolution
-                 * of the underlying DWT hardware counter against preemptive tasks. */
                 vTaskSuspendAll();
 
                 /* Fire non-blocking low-level bit-banging capture on the 1-Wire physical bus */
                 uint8_t dht11_success = DHT11_Read_Raw(&temp_c, &hum_pct);
 
-                /* Re-enable the operating system scheduler instantly post critical bus burst */
                 xTaskResumeAll();
 
                 /* --- DATA VERIFICATION & HARDWARE INGESTION GATE --- */
@@ -464,7 +450,6 @@ void Start_5Hz_Task(void *argument)
     }
 }
 
-
 /**
  * @brief  Task Slot: 1Hz (1000ms Periodicity) - Diagnostics & Network Telemetry
  * @author Mehmet Alperen BAKICI
@@ -474,14 +459,15 @@ void Start_5Hz_Task(void *argument)
  */
 void Start_1Hz_Task(void *argument)
 {
-//    char uart_buf[160];
-
+	char diagnostic_uart_buf[160];
+	    int diagnostic_msg_len = 0;
     for(;;)
     {
-        /* 👑 CRITICAL FIX: Rebound to the strict 1000ms hardware master clock semaphore.
-         * Using sem_1Hz ensures the LED toggles and telemetry transmits exactly once per second! */
+        /* Using sem_1Hz ensures the LED toggles and telemetry transmits exactly once per second. */
         if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_1Hz, portMAX_DELAY) == pdTRUE)
         {
+            Global_t.TaskMgmt_t.debug_1Hz_cnt++;
+
             /* --- STEP 1: SYSTEM HEARTBEAT INDICATOR --- */
             if (Global_t.mpu6050_veriler.is_initialized)
             {
@@ -489,35 +475,74 @@ void Start_1Hz_Task(void *argument)
                 HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
             }
 
-            /* --- STEP 2: PRODUCTION TELEMETRY & TINYML DATA STREAM --- */
+            /* --- STEP 2: CRITICAL FAULT INJECTION TEST CASE ---
+             * When g_wdt_test_trigger is manually evaluated to 1 via STM32CubeIDE Live Expressions,
+             * this thread forces an intentional infinite loop. This starves the hardware refresh
+             * signal and validates the Independent Watchdog (IWDG) automated recovery mechanism. */
+            if (g_wdt_test_trigger == 1)
+            {
+                diagnostic_msg_len = sprintf(diagnostic_uart_buf,
+                    "\r\n[WARNING] Watchdog fault condition injected. Starving IWDG reload boundary. Hardware reset pending...\r\n");
+
+                /* Iterate through the string buffer explicitly at register level */
+                for (int idx = 0; idx < diagnostic_msg_len; idx++)
+                {
+                    /* Hardware Spinlock: Wait strictly until TDR (Transmit Data Register) is empty.
+                     * TXE (Transmit Data Register Empty) flag resides in the USART ISR (Interrupt & Status Register). */
+                    while ((huart3.Instance->ISR & USART_ISR_TXE_TXFNF) == 0)
+                    {
+                        __asm volatile("" : : : "memory");
+                    }
+
+                    /* Inject character directly into the physical hardware register */
+                    huart3.Instance->TDR = (uint8_t)diagnostic_uart_buf[idx];
+                }
+
+                /* Hardware Flush: Wait until Transmission Complete (TC) flag is physically set in the silicon */
+                while ((huart3.Instance->ISR & USART_ISR_TC) == 0)
+                {
+                    __asm volatile("" : : : "memory");
+                }
+
+                /* Enforce atomic instruction/data synchronization boundaries */
+                __DSB();
+                __ISB();
+
+                /* 👑 SAFE SOFTWARE DELAY:
+                 * Bypasses HAL_Delay completely to circumvent the custom TIM5 / HAL_GetTick conflict.
+                 * Executes a pure assembly-backed loop to let the UART hardware pins flush fully before the trap. */
+                for (volatile uint32_t delay_cycle = 0; delay_cycle < 16000000; delay_cycle++)
+                {
+                    __NOP(); /* Burn raw CPU cycles safely at 400+ MHz */
+                }
+
+                while(1)
+                {
+                    /* Deliberately trap the execution pipeline to enforce an automated hardware recovery */
+                    __NOP();
+                }
+            }
+
+            /* --- STEP 3: INDEPENDENT WATCHDOG (IWDG) SERVICE GATING ---
+             * Linked explicitly to the active CubeMX peripheral handle instance (hiwdg1). */
+            HAL_IWDG_Refresh(&hiwdg1);
+
+            /* --- STEP 4: PRODUCTION TELEMETRY & TINYML DATA STREAM --- */
             /* Authentic Clean Format for Edge AI Dataset Processing:
              * [Smoothed_Current_mA],[Dynamic_Offset_mV],[Temperature_C],[Humidity_Pct] */
-//            int uart_len = sprintf(uart_buf, "%ld mA, %ld mV, T:%ld C, H:%%%ld\r\n",
-//                                   (int32_t)Global_t.SensorHub_t.current_mA,
-//                                   (int32_t)(Global_t.SensorHub_t.v_offset * 1000.0f),
-//                                   (int32_t)Global_t.SensorHub_t.temperature_C,
-//                                   (int32_t)Global_t.SensorHub_t.humidity_pct);
-//
-//            /* Non-blocking deterministic industrial logging transmission */
-//            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, uart_len, 30);
 
+            /* Note: Uncomment below for real-time edge streaming data payload activation
+            char uart_buf[160];
+            int uart_len = sprintf(uart_buf, "%ld mA, %ld mV, T:%ld C, H:%%%ld\r\n",
+                                   (int32_t)Global_t.SensorHub_t.current_mA,
+                                   (int32_t)(Global_t.SensorHub_t.v_offset * 1000.0f),
+                                   (int32_t)Global_t.SensorHub_t.temperature_C,
+                                   (int32_t)Global_t.SensorHub_t.humidity_pct);
 
-            /* --- STEP 3: RUNTIME VERIFICATION ARCHIVE (COMMENTED OUT) ---
-            uint32_t current_hw_tick = Global_t.TaskMgmt_t.system_master_tick;
-            uint32_t total_100Hz     = Global_t.TaskMgmt_t.debug_100Hz_cnt;
-            uint32_t total_50Hz      = Global_t.TaskMgmt_t.debug_50Hz_cnt;
-            uint32_t total_25Hz      = Global_t.TaskMgmt_t.debug_25Hz_cnt;
-            uint32_t total_10Hz      = Global_t.TaskMgmt_t.debug_10Hz_cnt;
-            uint32_t total_5Hz       = Global_t.TaskMgmt_t.debug_5Hz_cnt;
-
-            int test_len = sprintf(uart_buf,
-                "[ARCHIVE] HW_Tick:%lu | 100Hz:%lu | 50Hz:%lu | 25Hz:%lu | 10Hz:%lu | 5Hz:%lu\r\n",
-                current_hw_tick, total_100Hz, total_50Hz, total_25Hz, total_10Hz, total_5Hz);
-            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, test_len, 30);
-            ------------------------------------------------------------------ */
+            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, uart_len, 30);
+            */
         }
     }
 }
 
 /* USER CODE END Application */
-

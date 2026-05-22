@@ -325,6 +325,14 @@ void Process_Motor_Current_Resolution(void)
     /* --- STEP 8: INDUSTRIAL TELEMETRY DATA LOGGING --- */
     static uint8_t diag_counter = 0;
     diag_counter++;
+
+    extern volatile uint8_t g_wdt_test_trigger;
+        if (g_wdt_test_trigger == 1)
+        {
+            return; /* Exit subroutine immediately without touching the UART peripheral */
+        }
+
+
     if (diag_counter >= 5)
     {
         char diag_buf[128];
