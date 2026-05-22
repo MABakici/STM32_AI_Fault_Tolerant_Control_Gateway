@@ -1,32 +1,35 @@
 #ifndef GLOBAL_VARIABLES_CM7_H_
 #define GLOBAL_VARIABLES_CM7_H_
 
-#include <control_gateway_definitions.h>
+#include "control_gateway_definitions.h" /* Includes UART_Comm_t, Motor_Control_t, Sensor_Fusion_t, Task_Management_t */
 #include "MPU6050.h"
 #include <stdint.h>
 
-
 /**
  * @brief  Global Data Management Structure
- * @note   Centralized container for inter-task communication and state monitoring.
+ * @note   Centralized container for inter-task communication, state monitoring, and OS primitives.
  */
 typedef struct
 {
-    Sensor_Fusion_t  SensorHub_t;
-    uint32_t         safety_barrier[4];
+    /* --- Core Infrastructure & OS Context --- */
+    Task_Management_t TaskMgmt_t;           /* Now fully visible to the compiler */
+    uint32_t          safety_barrier[4];
 
-    MPU6050_t        mpu6050_veriler;      /* IMU raw and processed data */
-    uint8_t          is_tilt_detected;     /* Tilt threshold safety flag */
-    uint8_t          is_impact_detected;   /* Impact/G-Force event flag */
-    uint32_t         i2c_error_cnt;        /* Communication fault counter */
+    /* --- Sensor Telemetry Blocks --- */
+    Sensor_Fusion_t   SensorHub_t;          /* Calibrated current, climate and light data */
+    MPU6050_t         mpu6050_veriler;      /* IMU raw and processed data */
 
-    uint32_t         system_heartbeat;     /* Task scheduler health indicator */
+    /* --- Safety & Diagnostic Signals --- */
+    uint8_t           is_tilt_detected;     /* Tilt threshold safety flag */
+    uint8_t           is_impact_detected;   /* Impact/G-Force event flag */
+    uint32_t          i2c_error_cnt;        /* Communication fault counter */
+    uint32_t          system_heartbeat;     /* Task scheduler health indicator */
 
-    UART_Comm_t      uart_gateway;         /* Asynchronous communication handler */
-    Motor_Control_t  dc_motor_control;     /* Actuator state and telemetry handle */
+    /* --- Actuation & Communication Handlers --- */
+    UART_Comm_t       uart_gateway;         /* Asynchronous communication handler */
+    Motor_Control_t   dc_motor_control;     /* Actuator state and telemetry handle */
 } Global_Variables_t;
-
 
 extern Global_Variables_t Global_t;
 
-#endif
+#endif /* GLOBAL_VARIABLES_CM7_H_ */

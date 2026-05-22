@@ -25,7 +25,12 @@
 /* USER CODE BEGIN Includes */
 #include "control_gateway_init.h"
 #include "global_variables_CM7.h"
-
+#include "FreeRTOS.h"
+#include "stm32h7xx_hal.h"  /* Ensure HAL Core definitions and macros are loaded first */
+#include "cmsis_compiler.h" /* Loads the official ARM GCC compiler abstraction macros like __weak */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -77,53 +82,75 @@ I2C_HandleTypeDef hi2c2;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim5;
 
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart3_rx;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
-/* Definitions for IMUReadTask */
-osThreadId_t IMUReadTaskHandle;
-const osThreadAttr_t IMUReadTask_attributes = {
-  .name = "IMUReadTask",
+/* Definitions for Task_1000Hz */
+osThreadId_t Task_1000HzHandle;
+const osThreadAttr_t Task_1000Hz_attributes = {
+  .name = "Task_1000Hz",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityRealtime,
+};
+/* Definitions for Task_500Hz */
+osThreadId_t Task_500HzHandle;
+const osThreadAttr_t Task_500Hz_attributes = {
+  .name = "Task_500Hz",
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
-/* Definitions for AnalysisTask */
-osThreadId_t AnalysisTaskHandle;
-const osThreadAttr_t AnalysisTask_attributes = {
-  .name = "AnalysisTask",
+/* Definitions for Task_250Hz */
+osThreadId_t Task_250HzHandle;
+const osThreadAttr_t Task_250Hz_attributes = {
+  .name = "Task_250Hz",
   .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityHigh1,
 };
-/* Definitions for HeartbeatTask */
-osThreadId_t HeartbeatTaskHandle;
-const osThreadAttr_t HeartbeatTask_attributes = {
-  .name = "HeartbeatTask",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+/* Definitions for Task_100Hz */
+osThreadId_t Task_100HzHandle;
+const osThreadAttr_t Task_100Hz_attributes = {
+  .name = "Task_100Hz",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal3,
 };
-/* Definitions for CommTask */
-osThreadId_t CommTaskHandle;
-const osThreadAttr_t CommTask_attributes = {
-  .name = "CommTask",
+/* Definitions for Task_50Hz */
+osThreadId_t Task_50HzHandle;
+const osThreadAttr_t Task_50Hz_attributes = {
+  .name = "Task_50Hz",
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for MotorCntTask */
-osThreadId_t MotorCntTaskHandle;
-const osThreadAttr_t MotorCntTask_attributes = {
-  .name = "MotorCntTask",
+/* Definitions for Task_25Hz */
+osThreadId_t Task_25HzHandle;
+const osThreadAttr_t Task_25Hz_attributes = {
+  .name = "Task_25Hz",
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for SensorFusion */
-osThreadId_t SensorFusionHandle;
-const osThreadAttr_t SensorFusion_attributes = {
-  .name = "SensorFusion",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+/* Definitions for Task_10Hz */
+osThreadId_t Task_10HzHandle;
+const osThreadAttr_t Task_10Hz_attributes = {
+  .name = "Task_10Hz",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for Task_5Hz */
+osThreadId_t Task_5HzHandle;
+const osThreadAttr_t Task_5Hz_attributes = {
+  .name = "Task_5Hz",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for Task_1Hz */
+osThreadId_t Task_1HzHandle;
+const osThreadAttr_t Task_1Hz_attributes = {
+  .name = "Task_1Hz",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for I2C2_Mutex */
 osMutexId_t I2C2_MutexHandle;
@@ -146,14 +173,19 @@ static void MX_ETH_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM2_Init(void);
-void StartIMUReadTask(void *argument);
-void StartAnalysisTask(void *argument);
-void StartHeartbeatTask(void *argument);
-void StartCommTask(void *argument);
-void StartMotorCntTask(void *argument);
-void StartSensorFusion(void *argument);
+static void MX_TIM5_Init(void);
+void Start_1000Hz_Task(void *argument);
+void Start_500Hz_Task(void *argument);
+void Start_250Hz_Task(void *argument);
+void Start_100Hz_Task(void *argument);
+void Start_50Hz_Task(void *argument);
+void Start_25Hz_Task(void *argument);
+void Start_10Hz_Task(void *argument);
+void Start_5Hz_Task(void *argument);
+void Start_1Hz_Task(void *argument);
 
 /* USER CODE BEGIN PFP */
+void MX_FREERTOS_Init(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -227,6 +259,7 @@ HSEM notification */
   MX_TIM3_Init();
   MX_ADC1_Init();
   MX_TIM2_Init();
+  MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
 
   //!< Ilk ayarlamalari yapiyoruz.
@@ -245,6 +278,10 @@ HSEM notification */
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
+
+  /* Call the FreeRTOS initialization Semaphores defined in freertos.c */
+  MX_FREERTOS_Init();
+
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
 
@@ -257,23 +294,32 @@ HSEM notification */
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of IMUReadTask */
-  IMUReadTaskHandle = osThreadNew(StartIMUReadTask, NULL, &IMUReadTask_attributes);
+  /* creation of Task_1000Hz */
+  Task_1000HzHandle = osThreadNew(Start_1000Hz_Task, NULL, &Task_1000Hz_attributes);
 
-  /* creation of AnalysisTask */
-  AnalysisTaskHandle = osThreadNew(StartAnalysisTask, NULL, &AnalysisTask_attributes);
+  /* creation of Task_500Hz */
+  Task_500HzHandle = osThreadNew(Start_500Hz_Task, NULL, &Task_500Hz_attributes);
 
-  /* creation of HeartbeatTask */
-  HeartbeatTaskHandle = osThreadNew(StartHeartbeatTask, NULL, &HeartbeatTask_attributes);
+  /* creation of Task_250Hz */
+  Task_250HzHandle = osThreadNew(Start_250Hz_Task, NULL, &Task_250Hz_attributes);
 
-  /* creation of CommTask */
-  CommTaskHandle = osThreadNew(StartCommTask, NULL, &CommTask_attributes);
+  /* creation of Task_100Hz */
+  Task_100HzHandle = osThreadNew(Start_100Hz_Task, NULL, &Task_100Hz_attributes);
 
-  /* creation of MotorCntTask */
-  MotorCntTaskHandle = osThreadNew(StartMotorCntTask, NULL, &MotorCntTask_attributes);
+  /* creation of Task_50Hz */
+  Task_50HzHandle = osThreadNew(Start_50Hz_Task, NULL, &Task_50Hz_attributes);
 
-  /* creation of SensorFusion */
-  SensorFusionHandle = osThreadNew(StartSensorFusion, NULL, &SensorFusion_attributes);
+  /* creation of Task_25Hz */
+  Task_25HzHandle = osThreadNew(Start_25Hz_Task, NULL, &Task_25Hz_attributes);
+
+  /* creation of Task_10Hz */
+  Task_10HzHandle = osThreadNew(Start_10Hz_Task, NULL, &Task_10Hz_attributes);
+
+  /* creation of Task_5Hz */
+  Task_5HzHandle = osThreadNew(Start_5Hz_Task, NULL, &Task_5Hz_attributes);
+
+  /* creation of Task_1Hz */
+  Task_1HzHandle = osThreadNew(Start_1Hz_Task, NULL, &Task_1Hz_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -281,6 +327,7 @@ HSEM notification */
 
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
+  HAL_TIM_Base_Start_IT(&htim5);
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
@@ -678,6 +725,51 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM5_Init(void)
+{
+
+  /* USER CODE BEGIN TIM5_Init 0 */
+
+  /* USER CODE END TIM5_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM5_Init 1 */
+
+  /* USER CODE END TIM5_Init 1 */
+  htim5.Instance = TIM5;
+  htim5.Init.Prescaler = 74;
+  htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim5.Init.Period = 999;
+  htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim5, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim5, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM5_Init 2 */
+
+  /* USER CODE END TIM5_Init 2 */
+
+}
+
+/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -896,14 +988,14 @@ void Execute_AI_Config(uint8_t val)
 }
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartIMUReadTask */
+/* USER CODE BEGIN Header_Start_1000Hz_Task */
 /**
-  * @brief  Function implementing the IMUReadTask thread.
+  * @brief  Function implementing the Task_1000Hz thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartIMUReadTask */
-__weak void StartIMUReadTask(void *argument)
+/* USER CODE END Header_Start_1000Hz_Task */
+__weak void Start_1000Hz_Task(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
@@ -914,94 +1006,148 @@ __weak void StartIMUReadTask(void *argument)
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartAnalysisTask */
+/* USER CODE BEGIN Header_Start_500Hz_Task */
 /**
-* @brief Function implementing the AnalysisTask thread.
+* @brief Function implementing the Task_500Hz thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartAnalysisTask */
-__weak void StartAnalysisTask(void *argument)
+/* USER CODE END Header_Start_500Hz_Task */
+__weak void Start_500Hz_Task(void *argument)
 {
-  /* USER CODE BEGIN StartAnalysisTask */
+  /* USER CODE BEGIN Start_500Hz_Task */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartAnalysisTask */
+  /* USER CODE END Start_500Hz_Task */
 }
 
-/* USER CODE BEGIN Header_StartHeartbeatTask */
+/* USER CODE BEGIN Header_Start_250Hz_Task */
 /**
-* @brief Function implementing the HeartbeatTask thread.
+* @brief Function implementing the Task_250Hz thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartHeartbeatTask */
-__weak void StartHeartbeatTask(void *argument)
+/* USER CODE END Header_Start_250Hz_Task */
+__weak void Start_250Hz_Task(void *argument)
 {
-  /* USER CODE BEGIN StartHeartbeatTask */
+  /* USER CODE BEGIN Start_250Hz_Task */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartHeartbeatTask */
+  /* USER CODE END Start_250Hz_Task */
 }
 
-/* USER CODE BEGIN Header_StartCommTask */
+/* USER CODE BEGIN Header_Start_100Hz_Task */
 /**
-* @brief Function implementing the CommTask thread.
+* @brief Function implementing the Task_100Hz thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartCommTask */
-__weak void StartCommTask(void *argument)
+/* USER CODE END Header_Start_100Hz_Task */
+__weak void Start_100Hz_Task(void *argument)
 {
-  /* USER CODE BEGIN StartCommTask */
+  /* USER CODE BEGIN Start_100Hz_Task */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartCommTask */
+  /* USER CODE END Start_100Hz_Task */
 }
 
-/* USER CODE BEGIN Header_StartMotorCntTask */
+/* USER CODE BEGIN Header_Start_50Hz_Task */
 /**
-* @brief Function implementing the MotorCntTask thread.
+* @brief Function implementing the Task_50Hz thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartMotorCntTask */
-__weak void StartMotorCntTask(void *argument)
+/* USER CODE END Header_Start_50Hz_Task */
+__weak void Start_50Hz_Task(void *argument)
 {
-  /* USER CODE BEGIN StartMotorCntTask */
+  /* USER CODE BEGIN Start_50Hz_Task */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartMotorCntTask */
+  /* USER CODE END Start_50Hz_Task */
 }
 
-/* USER CODE BEGIN Header_StartSensorFusion */
+/* USER CODE BEGIN Header_Start_25Hz_Task */
 /**
-* @brief Function implementing the SensorFusion thread.
+* @brief Function implementing the Task_25Hz thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartSensorFusion */
-__weak void StartSensorFusion(void *argument)
+/* USER CODE END Header_Start_25Hz_Task */
+__weak void Start_25Hz_Task(void *argument)
 {
-  /* USER CODE BEGIN StartSensorFusion */
+  /* USER CODE BEGIN Start_25Hz_Task */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartSensorFusion */
+  /* USER CODE END Start_25Hz_Task */
+}
+
+/* USER CODE BEGIN Header_Start_10Hz_Task */
+/**
+* @brief Function implementing the Task_10Hz thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Start_10Hz_Task */
+__weak void Start_10Hz_Task(void *argument)
+{
+  /* USER CODE BEGIN Start_10Hz_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END Start_10Hz_Task */
+}
+
+/* USER CODE BEGIN Header_Start_5Hz_Task */
+/**
+* @brief Function implementing the Task_5Hz thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Start_5Hz_Task */
+__weak void Start_5Hz_Task(void *argument)
+{
+  /* USER CODE BEGIN Start_5Hz_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END Start_5Hz_Task */
+}
+
+/* USER CODE BEGIN Header_Start_1Hz_Task */
+/**
+* @brief Function implementing the Task_1Hz thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Start_1Hz_Task */
+__weak void Start_1Hz_Task(void *argument)
+{
+  /* USER CODE BEGIN Start_1Hz_Task */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END Start_1Hz_Task */
 }
 
 /**
@@ -1021,7 +1167,82 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
+  if (htim->Instance == TIM5)
+    {
+      /* HARDWARE GUARD: Eğer FreeRTOS çekirdeği henüz aktif olarak başlamadıysa,
+       * erkenden semafor fırlatıp işletim sistemini çökertmesini engelle! */
+      if (osKernelGetState() != osKernelRunning)
+      {
+          return;
+      }
 
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+      /* 1. Global zaman sayacını 1 arttır (Her 1ms'de bir çakar) */
+      Global_t.TaskMgmt_t.system_master_tick++;
+
+      /* 2. Çoklu Oranlı Zaman Bölümleme Pipeline'ı (Multirate Decimation) */
+
+      /* 1000 Hz: Her 1ms'de bir tetiklenir */
+      xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_1000Hz, &xHigherPriorityTaskWoken);
+
+      /* 500 Hz: Her 2ms'de bir tetiklenir */
+      if (Global_t.TaskMgmt_t.system_master_tick % 2 == 0)
+      {
+          xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_500Hz, &xHigherPriorityTaskWoken);
+      }
+
+      /* 250 Hz: Her 4ms'de bir tetiklenir */
+      if (Global_t.TaskMgmt_t.system_master_tick % 4 == 0)
+      {
+          xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_250Hz, &xHigherPriorityTaskWoken);
+      }
+
+      /* 100 Hz: Her 10ms'de bir tetiklenir */
+      if (Global_t.TaskMgmt_t.system_master_tick % 10 == 0)
+      {
+          xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_100Hz, &xHigherPriorityTaskWoken);
+      }
+
+      /* 50 Hz: Her 20ms'de bir tetiklenir */
+      if (Global_t.TaskMgmt_t.system_master_tick % 20 == 0)
+      {
+          xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_50Hz, &xHigherPriorityTaskWoken);
+      }
+
+      /* 25 Hz: Her 40ms'de bir tetiklenir (Akım Filtre Odası) */
+      if (Global_t.TaskMgmt_t.system_master_tick % 40 == 0)
+      {
+          xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_25Hz, &xHigherPriorityTaskWoken);
+      }
+
+      /* 10 Hz: Her 100ms'de bir tetiklenir */
+      if (Global_t.TaskMgmt_t.system_master_tick % 100 == 0)
+      {
+          xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_10Hz, &xHigherPriorityTaskWoken);
+      }
+
+      /* 5 Hz: Her 200ms'de bir tetiklenir */
+      if (Global_t.TaskMgmt_t.system_master_tick % 200 == 0)
+      {
+          xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_5Hz, &xHigherPriorityTaskWoken);
+      }
+
+      /* 1 Hz: Her 1000ms'de bir tetiklenir */
+      if (Global_t.TaskMgmt_t.system_master_tick % 1000 == 0)
+      {
+          xSemaphoreGiveFromISR(Global_t.TaskMgmt_t.sem_1Hz, &xHigherPriorityTaskWoken);
+
+          /* Sayaç Taşma Kalkanı */
+          if (Global_t.TaskMgmt_t.system_master_tick >= 4000000000U)
+          {
+              Global_t.TaskMgmt_t.system_master_tick = 0;
+          }
+      }
+
+      /* Kesmeden pürüzsüz çıkış ve görev değişimi */
+      portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
   /* USER CODE END Callback 1 */
 }
 

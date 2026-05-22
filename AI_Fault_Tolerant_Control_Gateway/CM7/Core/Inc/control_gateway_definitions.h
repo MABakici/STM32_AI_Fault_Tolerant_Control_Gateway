@@ -24,6 +24,7 @@ typedef struct
 } Motor_Control_t;
 
 
+
 /**
  * @brief  Hardened Sensor Fusion telemetry structure with explicit
  * memory alignment and DMA hardware shielding.
@@ -36,6 +37,8 @@ typedef struct __attribute__((packed)) {
     float v_offset;             // Dynamically locked zero-current reference calibration in Volts */
     float temperature_C;        // Ambient environmental temperature in Celsius from DHT11 */
     float humidity_pct;         // Relative environmental humidity percentage from DHT11 */
+
+
     float light_intensity;      // Scaled ambient light intensity (Reserved for analog LDR) */
 
     /* --- DMA Hardware Isolation Zone --- */
@@ -51,4 +54,39 @@ typedef struct __attribute__((packed)) {
 
 } Sensor_Fusion_t;
 
-#endif
+
+/**
+ * @brief  Operating System & Task Management Container
+ * @note   Handles are stored as void* to eliminate strict header compilation dependencies.
+ * @details Enhanced with atomic volatile execution counters to perform multirate runtime verification.
+ */
+typedef struct
+{
+    /* --- Hardware Time Sync Block --- */
+    volatile uint32_t system_master_tick;   /**< 1000Hz absolute hardware time factory (TIM5) */
+    uint32_t          prev_execution_tick;
+
+    /* --- Multirate Decimation Signals (Anonymized Handles) --- */
+    void* sem_1000Hz;
+    void* sem_500Hz;
+    void* sem_250Hz;
+    void* sem_100Hz;
+    void* sem_50Hz;
+    void* sem_25Hz;
+    void* sem_10Hz;
+    void* sem_5Hz;
+    void* sem_1Hz;
+
+    /* --- Runtime Verification & Debug Execution Counters --- */
+    volatile uint32_t debug_100Hz_cnt;      /**< Target: Exactly 100 hits per second */
+    volatile uint32_t debug_50Hz_cnt;       /**< Target: Exactly 50 hits per second */
+    volatile uint32_t debug_25Hz_cnt;       /**< Target: Exactly 25 hits per second */
+    volatile uint32_t debug_10Hz_cnt;       /**< Target: Exactly 10 hits per second */
+    volatile uint32_t debug_5Hz_cnt;        /**< Target: Exactly 5 hits per second */
+
+    /* --- Diagnostic System Metrics --- */
+    uint32_t          scheduler_health_bm;
+    uint32_t          missed_ticks_counter;
+} Task_Management_t;
+
+#endif /* CONTROL_GATEWAY_DEFINITIONS_H_ */

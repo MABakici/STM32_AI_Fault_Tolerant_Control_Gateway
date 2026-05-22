@@ -10,6 +10,7 @@
 #define INC_CONTROL_GATEWAY_SENSOR_HUB_H_
 
 #include "main.h"
+#include "global_variables_CM7.h"
 
 /**
  * @brief  Executes a safe, non-blocking 40-bit data acquisition sequence from DHT11.
@@ -18,5 +19,9 @@
  * @return uint8_t      : 1 if checksum matches and payload is valid, 0 otherwise.
  */
 uint8_t DHT11_Read_Raw(float *pTemperature, float *pHumidity);
+
+void delay_us(uint32_t us);
+
+void Process_Motor_Current_Resolution(void);
 
 #endif /* INC_CONTROL_GATEWAY_SENSOR_HUB_H_ */

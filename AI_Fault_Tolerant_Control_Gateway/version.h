@@ -11,9 +11,51 @@
 #define PROJECT_NAME        "AI_FAULT_TOLERANT_CONTROL_GATEWAY"
 #define SW_VERSION_MAJOR    0
 #define SW_VERSION_MINOR    1
-#define SW_VERSION_PATCH    1
-#define BUILD_DATE          "2026-05-19"
+#define SW_VERSION_PATCH    2
+#define BUILD_DATE          "2026-05-22"
 
+
+
+/************************************************************************
+* @version           : v0.1.2
+* @author            : Mehmet Alperen Bakici
+* @date              : 2026.05.22 14:30
+* @branch            : main
+*-------------------------------------------------------------------
+* @notes             :
+*
+* - RTI-BASED SAFETY-CRITICAL ARCHITECTURE: Transitioned to a highly
+* deterministic, RTI-driven, safety-critical RTOS task structure. Forced
+* TIM5 to act as the absolute hardware time factory, operating strictly
+* at 1000Hz (1ms) to eliminate standard Systick dependencies.
+*
+* - MULTIRATE SEMAPHORE MECHANISM: Fully synchronized the execution
+* pipeline using rate-bound binary semaphores dispatched directly from
+* the TIM5 ISR core. Tasks are explicitly isolated by priority levels:
+* 100Hz (IMU), 50Hz (Motor), 25Hz (Current), 10Hz (UART/UI), and 5Hz (Climate).
+*
+* - RUNTIME VERIFICATION COMPLETED: Successfully validated all task slot
+* frequencies via cumulative diagnostics. Implemented a deterministic
+* phase-offset decimation filter exclusively in the 10Hz task to mitigate
+* heavy I2C blocking latencies, successfully clearing CPU scheduling jitter.
+*
+* - CACHE-BYPASS VOLATILE HARDWARE LINK: Solved the critical L1 D-Cache
+* coherency conflict and alignment traps by transitioning the ADC pipeline
+* to a non-cached, volatile hardware pointer redirection topology, fully
+* mitigating Cortex-M7 Bus/HardFault anomalies.
+*
+* - MULTIRATE SLOT CONSOLIDATION (5Hz Cadence): Consolidated the real-time
+* brushed DC motor current tracking and dynamic calibration engine into the
+* existing 5Hz framework task, ensuring optimized thread execution context
+* and drastically reducing RTOS scheduling overhead (Context Switches).
+*
+* - ENHANCED SYNCHRONOUS BURST DSP PIPELINE: Replaced blocking osDelay
+* mechanisms with a non-blocking 15-sample burst oversampling loop combined
+* with a Center-Averaged Median Filter layer and calibrated EMA smoothing,
+* achieving precise 300mA load tracking and preserving high-frequency
+* features for downstream TinyML inference.
+*
+*************************************************************************/
 
 
 /************************************************************************

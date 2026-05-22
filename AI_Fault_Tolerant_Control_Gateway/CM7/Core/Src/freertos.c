@@ -2,7 +2,9 @@
 /**
   ******************************************************************************
   * File Name          : freertos.c
-  * Description        : Code for freertos applications
+  * Description        : Code for freertos applications (v0.2.0 TTC Core Baseline)
+  * @author            : Mehmet Alperen BAKICI
+  * @date              : 2026.05.20
   ******************************************************************************
   * @attention
   *
@@ -31,6 +33,7 @@
 #include "global_variables_CM7.h"
 #include "control_gateway_comm_handler.h"
 #include "control_gateway_sensor_hub.h"
+#include "semphr.h"
 extern I2C_HandleTypeDef hi2c2;
 
 /* External handle for USART3 defined in main.c */
@@ -65,473 +68,454 @@ extern osMutexId_t I2C2_MutexHandle;
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
+void MX_FREERTOS_Init(void) {
+    /* USER CODE BEGIN RTOS_SEMAPHORES */
 
-/**
- * @brief  Task 1: Sensor Data Acquisition (High Priority)
- * @author Mehmet Alperen BAKICI
- * @date   14.05.2026
- * @details Reads raw data from MPU6050 via I2C with Mutex protection.
- */
-void StartIMUReadTask(void *argument)
-{
-  for(;;)
-  {
-    if ( Global_t.mpu6050_veriler.is_initialized )
-    {
-      /* Mutex acquisition for I2C Bus Resource Protection */
-      if (osMutexAcquire(I2C2_MutexHandle, osWaitForever) == osOK)
-      {
-        if (MPU6050_Read_All(&hi2c2, &Global_t.mpu6050_veriler) != HAL_OK)
-        {
-          Global_t.i2c_error_cnt++;
-        }
-        else
-        {
-          Global_t.i2c_error_cnt = 0;
-        }
-        /* Release I2C resource for other possible users */
-        osMutexRelease(I2C2_MutexHandle);
-      }
-    }
-    /* 50Hz sampling rate */
-    osDelay(20);
-  }
+    /* Allocate and Map Binary Semaphores directly into the Global Architecture */
+    Global_t.TaskMgmt_t.sem_1000Hz = xSemaphoreCreateBinary();
+    Global_t.TaskMgmt_t.sem_500Hz  = xSemaphoreCreateBinary();
+    Global_t.TaskMgmt_t.sem_250Hz  = xSemaphoreCreateBinary();
+    Global_t.TaskMgmt_t.sem_100Hz  = xSemaphoreCreateBinary();
+    Global_t.TaskMgmt_t.sem_50Hz   = xSemaphoreCreateBinary();
+    Global_t.TaskMgmt_t.sem_25Hz   = xSemaphoreCreateBinary();
+    Global_t.TaskMgmt_t.sem_10Hz   = xSemaphoreCreateBinary();
+    Global_t.TaskMgmt_t.sem_5Hz    = xSemaphoreCreateBinary();
+    Global_t.TaskMgmt_t.sem_1Hz    = xSemaphoreCreateBinary();
+
+    /* USER CODE END RTOS_SEMAPHORES */
 }
 
 /**
- * @brief  Task 2: Data Analysis & LED Management (Normal Priority)
+ * @brief  Task Slot: 1000Hz (1ms Periodicity) - Realtime / Safety-Critical
  * @author Mehmet Alperen BAKICI
- * @date   14.05.2026
- * @details Processes IMU data for Impact and Tilt detection.
+ * @date   2026.05.20
+ * @details Pure empty hardware-paced slots controlled by TIM5 master sync.
  */
-void StartAnalysisTask(void *argument)
+void Start_1000Hz_Task(void *argument)
 {
-  /* Reduced filter count for faster response (20ms * 5 = 100ms debounce) */
-  uint16_t tilt_filter_cnt = 0;
-
-  for(;;)
-  {
-    if ( Global_t.mpu6050_veriler.is_initialized )
+    for(;;)
     {
-      float ax = Global_t.mpu6050_veriler.Accel_X;
-      float ay = Global_t.mpu6050_veriler.Accel_Y;
-      float az = Global_t.mpu6050_veriler.Accel_Z;
-
-      /* --- IMPACT DETECTION --- */
-      float total_g = sqrtf((ax * ax) + (ay * ay) + (az * az));
-
-      if (total_g > 1.5f || total_g < 0.5f)
-      {
-        Global_t.is_impact_detected = 1;
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);
-        /* WARNING: High osDelay here blocks the entire task!
-           Reduced to 10ms for minimal task blocking */
-        osDelay(10);
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
-      }
-      else {
-        Global_t.is_impact_detected = 0;
-      }
-
-      /* --- TILT DETECTION --- */
-      /* az < 0.65f represents roughly 50 degrees of tilt */
-      if (az < 0.65f)
-      {
-        /* Faster response: trigger after 5 consecutive samples (100ms total) */
-        if (++tilt_filter_cnt > 5)
+        if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_1000Hz, portMAX_DELAY) == pdTRUE)
         {
-          Global_t.is_tilt_detected = 1;
-          HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
-        }
-      }
-      else
-      {
-        tilt_filter_cnt = 0;
-        Global_t.is_tilt_detected = 0;
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
-      }
-    }
-    /* Increased task frequency to 50Hz (Matches IMU sampling) */
-    osDelay(20);
-  }
-}
-/**
- * @brief  Task 3: System Heartbeat & Optical/Climate Monitoring (Low Priority)
- * @author Mehmet Alperen BAKICI
- * @date   2026.05.19
- * @brief  Toggles the system heartbeat LED at 1Hz, samples the digital LDR state,
- * and deterministically polls the DHT11 sensor at a 1Hz frequency.
- */
-void StartHeartbeatTask(void *argument)
-{
-    float temp_c = 0.0f;
-    float hum_pct = 0.0f;
+            /* Room 1000Hz: Pure Empty */
 
-    /* CRITICAL: Must be static to persist across FreeRTOS context switches */
-    static uint8_t dht11_timer_cnt = 0;
+        }
+    }
+}
+
+/**
+ * @brief  Task Slot: 500Hz (2ms Periodicity) - Ultra-High Speed
+ * @author Mehmet Alperen BAKICI
+ * @date   2026.05.20
+ * @details Pure empty hardware-paced slots controlled by TIM5 master sync.
+ */
+void Start_500Hz_Task(void *argument)
+{
+    for(;;)
+    {
+        if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_500Hz, portMAX_DELAY) == pdTRUE)
+        {
+            /* Room 500Hz: Pure Empty */
+        }
+    }
+}
+
+/**
+ * @brief  Task Slot: 250Hz (4ms Periodicity) - High Speed Actuation
+ * @author Mehmet Alperen BAKICI
+ * @date   2026.05.20
+ * @details Pure empty hardware-paced slots controlled by TIM5 master sync.
+ */
+void Start_250Hz_Task(void *argument)
+{
+    for(;;)
+    {
+        if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_250Hz, portMAX_DELAY) == pdTRUE)
+        {
+            /* Room 250Hz: Pure Empty */
+        }
+    }
+}
+
+/**
+ * @brief  Task Slot: 100Hz (10ms Periodicity) - Sensor Ingestion Hub
+ * @author Mehmet Alperen BAKICI
+ * @date   2026.05.20
+ * @details Reads raw data from MPU6050 via I2C with Mutex protection and
+ * immediately runs deterministic tilt and impact analysis at 100Hz.
+ */
+void Start_100Hz_Task(void *argument)
+{
+    /* Local counter for physical tilt debouncing */
+    uint16_t tilt_filter_cnt = 0;
 
     for(;;)
     {
-        /* --- STEP 1: HEARTBEAT LED INDICATOR (1Hz) --- */
-        if (Global_t.mpu6050_veriler.is_initialized)
+        /* Strict 10ms hardware pace triggered from TIM5 ISR */
+        if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_100Hz, portMAX_DELAY) == pdTRUE)
         {
-            HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-        }
-
-        /* --- STEP 2: LDR OPTICAL SAMPLING --- */
-        /* LM393 digital output driving logic:
-         * GPIO_PIN_SET   -> Ambient light drops below pot threshold (Darkness detected)
-         * GPIO_PIN_RESET -> Ambient light is sufficient (Well-lit environment) */
-        if (HAL_GPIO_ReadPin(LDR_PIN_GPIO_Port, LDR_PIN_Pin) == GPIO_PIN_SET)
-        {
-            Global_t.SensorHub_t.is_dark = 1; /* Contextual Anomaly Indicator: Environment is Dark */
-        }
-        else
-        {
-            Global_t.SensorHub_t.is_dark = 0; /* Nominal State: Environment is Well-Lit */
-        }
-
-        /* --- STEP 3: DETERMINISTIC 1Hz DHT11 CLIMATE POLLING --- */
-        dht11_timer_cnt++;
-        if (dht11_timer_cnt >= 2) /* 2 loops * 500ms = 1000ms scheduler period */
-        {
-            /* Explicit execution guard to clear outstanding scheduler ticks prior to 1-Wire burst */
-            osDelay(10);
-
-            if (DHT11_Read_Raw(&temp_c, &hum_pct))
+        	Global_t.TaskMgmt_t.debug_100Hz_cnt++;
+            /* --- STEP 1: MPU6050 DATA ACQUISITION --- */
+            if (Global_t.mpu6050_veriler.is_initialized)
             {
-                Global_t.SensorHub_t.temperature_C = temp_c;
-                Global_t.SensorHub_t.humidity_pct  = hum_pct;
+                /* Thread-safe I2C Bus Resource Protection via Mutex */
+                if (osMutexAcquire(I2C2_MutexHandle, osWaitForever) == osOK)
+                {
+                    if (MPU6050_Read_All(&hi2c2, &Global_t.mpu6050_veriler) != HAL_OK)
+                    {
+                        Global_t.i2c_error_cnt++;
+                    }
+                    else
+                    {
+                        Global_t.i2c_error_cnt = 0;
+                    }
+                    /* Promptly release the shared I2C peripheral */
+                    osMutexRelease(I2C2_MutexHandle);
+                }
             }
-            dht11_timer_cnt = 0;
-        }
 
-        /* Adjusted task loop timing block to maintain strict 500ms periodicity */
-        osDelay(490);
-    }
-}
-
-/**
- * @brief  Task: Communication & UI Gateway (Normal Priority)
- * @author Mehmet Alperen BAKICI
- * @version v0.1.1 (Fixed-Grid Industrial UI - Telemetry Injection)
- * @date   2026.05.19
- * @brief  Handles UART DMA packet processing and orchestrates the 20x4 LCD
- * telemetry display with pixel-perfect vertical layout alignment.
- * The fixed-grid system locks vertical separators (|) strictly at column 12.
- */
-void StartCommTask(void *argument)
-{
-    char line_buf[32]; /* Hardened layout buffer against format-overflow constraints */
-    uint32_t sec = 0, min = 0, hour = 0;
-    Comm_Handle_t hGatewayComm = {
-        .pRxBuffer     = Global_t.uart_gateway.rx_buffer,
-        .pErrorCounter = &Global_t.uart_gateway.uart_error_cnt
-    };
-
-    /* Start UART ring buffer pipeline via DMA link */
-    HAL_UART_Receive_DMA(&huart3, Global_t.uart_gateway.rx_buffer, FRAME_LENGTH);
-    LCD_Clear();
-    osDelay(100);
-
-    for(;;)
-    {
-        uint32_t current_tick = HAL_GetTick();
-
-        /* --- STEP 1: UART PACKET PROCESSING ENGINE --- */
-        if (Global_t.uart_gateway.packet_ready == 1)
-        {
-            Comm_Process_Packet(&hGatewayComm);
-
-            /* Update telemetry timestamp and fire visual lock flag */
-            Global_t.uart_gateway.last_packet_tick = current_tick;
-            Global_t.uart_gateway.display_timeout_flag = 1;
-
-            Global_t.uart_gateway.packet_ready = 0;
-        }
-
-        /* --- STEP 2: ROW 0: UPTIME & TEMPERATURE TELEMETRY --- */
-        sec = (current_tick / 1000) % 60;
-        min = (current_tick / 60000) % 60;
-        hour = (current_tick / 3600000);
-
-        /* Left side: 12 chars, Separator: 1 char, Right side: 7 chars = Exactly 20 chars */
-        sprintf(line_buf, "UPT:%02lu:%02lu:%02lu| T:%2ldC ",
-                hour, min, sec,
-                (int32_t)Global_t.SensorHub_t.temperature_C);
-
-        LCD_Put_Cursor(0, 0);
-        LCD_Send_String(line_buf);
-
-        /* --- STEP 3: ROW 1: UART NETWORK MONITORING & LDR STATUS --- */
-        LCD_Put_Cursor(1, 0);
-
-        /* Select optical status mnemonic string based on the current LDR sensor state */
-        const char* ldr_str = (Global_t.SensorHub_t.is_dark == 1) ? "L:DRK" : "L:LGT";
-
-        if (Global_t.uart_gateway.display_timeout_flag == 1)
-        {
-            if (current_tick - Global_t.uart_gateway.last_packet_tick < 3000)
+            /* --- STEP 2: REALTIME SENSOR ANALYSIS --- */
+            if (Global_t.mpu6050_veriler.is_initialized && Global_t.i2c_error_cnt == 0)
             {
-                /* "UART:RX_PACK" is 11 chars. %-12s expands it to exactly 12 chars. */
-                sprintf(line_buf, "%-12s| %s ", "UART:RX_PACK", ldr_str);
-            }
-            else
-            {
-                Global_t.uart_gateway.display_timeout_flag = 0;
-                /* "UART:LISTEN" is 11 chars. %-12s expands it to exactly 12 chars. */
-                sprintf(line_buf, "%-12s| %s ", "UART:LISTEN", ldr_str);
+                float ax = Global_t.mpu6050_veriler.Accel_X;
+                float ay = Global_t.mpu6050_veriler.Accel_Y;
+                float az = Global_t.mpu6050_veriler.Accel_Z;
+
+                /* 2.1: Deterministic Impact / G-Force Anomaly Detection */
+                float total_g = sqrtf((ax * ax) + (ay * ay) + (az * az));
+
+                if (total_g > 1.5f || total_g < 0.5f)
+                {
+                    Global_t.is_impact_detected = 1;
+                    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET); /* Fire Warning/Impact LED */
+                }
+                else
+                {
+                    Global_t.is_impact_detected = 0;
+                    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
+                }
+
+                /* 2.2: Deterministic Tilt Detection (az < 0.65f represents ~50 deg tilt) */
+                if (az < 0.65f)
+                {
+                    /* Debounce tracking: Trigger after 5 consecutive 100Hz samples (50ms total) */
+                    if (++tilt_filter_cnt > 5)
+                    {
+                        Global_t.is_tilt_detected = 1;
+                        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET); /* Fire Safety/Tilt LED */
+                    }
+                }
+                else
+                {
+                    tilt_filter_cnt = 0;
+                    Global_t.is_tilt_detected = 0;
+                    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+                }
             }
         }
-        else
-        {
-            sprintf(line_buf, "%-12s| %s ", "UART:LISTEN", ldr_str);
-        }
-        LCD_Send_String(line_buf);
-
-        /* --- STEP 4: ROW 2: IMU STATUS & HUMIDITY TELEMETRY --- */
-        LCD_Put_Cursor(2, 0);
-
-        /* %-12s guarantees that left token is left-padded to 12 chars dynamically */
-        if (Global_t.is_tilt_detected)
-        {
-            sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:TILT", (int32_t)Global_t.SensorHub_t.humidity_pct);
-        }
-        else if (Global_t.is_impact_detected)
-        {
-            sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:IMPACT", (int32_t)Global_t.SensorHub_t.humidity_pct);
-        }
-        else
-        {
-            sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:STABLE", (int32_t)Global_t.SensorHub_t.humidity_pct);
-        }
-        LCD_Send_String(line_buf);
-
-        /* --- STEP 5: ROW 3: MOTOR ACTUATOR & CURRENT TRANSIENT MONITORING --- */
-        LCD_Put_Cursor(3, 0);
-
-        /* State Alpha: Fault Condition (Overcurrent Overload) */
-        if (Global_t.SensorHub_t.overcurrent_flag == 1)
-        {
-            sprintf(line_buf, "%-12s|%4ldmA", "ERR:OVERCUR!", (int32_t)Global_t.SensorHub_t.current_mA);
-        }
-        /* State Beta: Safety Shutdown (System Halted via Flight Interlock) */
-        else if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
-        {
-            sprintf(line_buf, "%-12s|%4ldmA", "MOT:HLT", (int32_t)Global_t.SensorHub_t.current_mA);
-        }
-        /* State Gamma: Nominal Execution Mode */
-        else
-        {
-            char speed_str[16];
-            sprintf(speed_str, "MOT:%3d%%", Global_t.dc_motor_control.target_speed);
-            sprintf(line_buf, "%-12s|%4ldmA", speed_str, (int32_t)Global_t.SensorHub_t.current_mA);
-        }
-        LCD_Send_String(line_buf);
-
-        /* Deterministic 5Hz interface refresh grid pace */
-        osDelay(200);
     }
 }
 
 
 /**
- * @brief  Task: Motor Actuation & Safety Control (Normal Priority)
+ * @brief  Task Slot: 50Hz (20ms Periodicity) - Motor Actuation & Safety Control
  * @author Mehmet Alperen BAKICI
- * @date   14.05.2026
- * @details Implements a safety-first motor control logic. Priorities:
- *          1. Physical Safety (Tilt)
- *          2. Logical Safety (Software Halt)
- *          3. Operational Speed (Asynchronous PWM updates)
+ * @date   2026.05.20
+ * @details Implements a hardware-paced, safety-first motor control logic at 50Hz.
+ * Prioritizes immediate cessation (Tilt/Halt Interlocks) over nominal PWM driving.
  */
-void StartMotorCntTask(void *argument)
+void Start_50Hz_Task(void *argument)
 {
-    /* Initialize actuator defaults to ensure predictable startup state */
+    /* Initialize actuator defaults within the task context to ensure predictable states */
     Global_t.dc_motor_control.target_speed = 50;
     Global_t.dc_motor_control.is_system_halted = 0;
 
     for(;;)
     {
-        /**
-         * @section Safety Priority Logic
-         * Immediate shutdown if physical tilt is detected OR
-         * software-triggered emergency stop is active.
-         */
-        if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
+        /* Strict 20ms hardware cadence enforced by TIM5 master clock semaphore */
+        if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_50Hz, portMAX_DELAY) == pdTRUE)
         {
-            /* Force immediate actuator cessation */
-            DRV8833_Set_Motor(MOTOR_A, MOTOR_STOP, 0);
-        }
-        else
-        {
+        	Global_t.TaskMgmt_t.debug_50Hz_cnt++;
             /**
-             * @section Operational Mode
-             * Resume nominal operation using asynchronously updated PWM duty cycle.
+             * @section Safety Interlock Evaluation
+             * Immediate motor shutdown triggered if physical tilt failure is active
+             * OR software emergency flight stop (is_system_halted) is fired.
              */
-            DRV8833_Set_Motor(MOTOR_A, MOTOR_FORWARD, Global_t.dc_motor_control.target_speed);
+            if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
+            {
+                /* Force immediate physical actuator cessation */
+                DRV8833_Set_Motor(MOTOR_A, MOTOR_STOP, 0);
+            }
+            else
+            {
+                /**
+                 * @section Nominal Operational Mode
+                 * Inject the target speed duty cycle directly into the DRV8833 driver.
+                 */
+                DRV8833_Set_Motor(MOTOR_A, MOTOR_FORWARD, Global_t.dc_motor_control.target_speed);
+            }
         }
+    }
+}
 
-        /* Enforce task frequency (20Hz) for optimized power/performance ratio */
-        osDelay(50);
+
+/**
+ * @brief  Task Slot: 10Hz (100ms Periodicity) - UI Refresh & Network Ingestion
+ * @author Mehmet Alperen BAKICI
+ * @date   2026.05.21
+ * @details Handles real-time asynchronous UART command ingestion and packet dispatching at
+ * a native 10Hz cadence, while executing a deterministic 2:1 downsampling (decimation)
+ * gate to enforce a stabilized 5Hz refresh cycle on the liquid crystal display (LCD).
+ * @note    The telemetry tracking counters are strictly handled outside sub-routines to avoid
+ * algorithmic decimation lag during context switching.
+ * @param  argument: Not used
+ * @retval None
+ */
+void Start_10Hz_Task(void *argument)
+{
+    /* Local string buffer for display layout formatting */
+    char line_buf[32];
+    uint32_t sec = 0, min = 0, hour = 0;
+
+    /* Fixed frequency divider used to decimate the 10Hz loop cadence into a 5Hz LCD update rate */
+    static uint8_t lcd_refresh_divider = 0;
+
+    /* Bind communication context handle explicitly with the global peripheral structure */
+    Comm_Handle_t hGatewayComm = {
+        .pRxBuffer     = Global_t.uart_gateway.rx_buffer,
+        .pErrorCounter = &Global_t.uart_gateway.uart_error_cnt
+    };
+
+    /* Initialize physical screen layout on boot phase */
+    LCD_Clear();
+
+    for(;;)
+    {
+        /* Enforced periodic cadence from the TIM5 hardware master interrupt via semaphore pipeline */
+        if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_10Hz, portMAX_DELAY) == pdTRUE)
+        {
+            /* 👑 TELEMETRY DIAGNOSTIC BOUNDARY:
+             * Placed strictly at the entry point of the 10Hz scheduler gate to maintain
+             * absolute time-domain accumulation accuracy regardless of subsequent conditional loops. */
+            Global_t.TaskMgmt_t.debug_10Hz_cnt++;
+
+            /* Cache real-time system clock reference locally */
+            uint32_t current_tick = Global_t.TaskMgmt_t.system_master_tick;
+
+            /* --- STEP 1: REAL-TIME UART PACKET PROCESSING (10Hz Low-Latency Domain) --- */
+            if (Global_t.uart_gateway.packet_ready == 1)
+            {
+                Comm_Process_Packet(&hGatewayComm);
+                Global_t.uart_gateway.last_packet_tick = current_tick;
+                Global_t.uart_gateway.display_timeout_flag = 1;
+                Global_t.uart_gateway.packet_ready = 0;
+            }
+
+            /* --- STEP 2: AMBIENT LIGHT SENSOR DATA INGESTION --- */
+            if (HAL_GPIO_ReadPin(LDR_PIN_GPIO_Port, LDR_PIN_Pin) == GPIO_PIN_SET)
+            {
+                Global_t.SensorHub_t.is_dark = 1;
+            }
+            else
+            {
+                Global_t.SensorHub_t.is_dark = 0;
+            }
+
+            /* --- STEP 3: LCD DETERMINISTIC 5Hz DECIMATION GATE ---
+             * Dividing the underlying 10Hz scheduler pace strictly by a factor of 2.
+             * Executes display bus refresh every 200ms to preserve system bus efficiency. */
+            lcd_refresh_divider++;
+            if (lcd_refresh_divider >= 2)
+            {
+                /* --- DISPLAY MATRIX ROW 0: SYSTEM UPTIME & THERMAL TELEMETRY --- */
+                sec  = (current_tick / 1000) % 60;
+                min  = (current_tick / 60000) % 60;
+                hour = (current_tick / 3600000);
+
+                sprintf(line_buf, "UPT:%02lu:%02lu:%02lu| T:%2ldC ", hour, min, sec, (int32_t)Global_t.SensorHub_t.temperature_C);
+                LCD_Put_Cursor(0, 0);
+                LCD_Send_String(line_buf);
+
+                /* --- DISPLAY MATRIX ROW 1: COMMUNICATION GATEWAY STATUS & OPTICAL STATE --- */
+                LCD_Put_Cursor(1, 0);
+                const char* ldr_str = (Global_t.SensorHub_t.is_dark == 1) ? "L:DRK" : "L:LGT";
+
+                if (Global_t.uart_gateway.display_timeout_flag == 1)
+                {
+                    /* Maintain message retention on the screen for a strict 3000ms duration window */
+                    if (current_tick - Global_t.uart_gateway.last_packet_tick < 3000)
+                    {
+                        sprintf(line_buf, "%-12s| %s ", "UART:RX_PACK", ldr_str);
+                    }
+                    else
+                    {
+                        Global_t.uart_gateway.display_timeout_flag = 0;
+                        sprintf(line_buf, "%-12s| %s ", "UART:LISTEN", ldr_str);
+                    }
+                }
+                else
+                {
+                    sprintf(line_buf, "%-12s| %s ", "UART:LISTEN", ldr_str);
+                }
+                LCD_Send_String(line_buf);
+
+                /* --- DISPLAY MATRIX ROW 2: INERTIAL MEASUREMENT UNIT (IMU) FAULT ISOLATION --- */
+                LCD_Put_Cursor(2, 0);
+                if (Global_t.is_tilt_detected)
+                {
+                    sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:TILT", (int32_t)Global_t.SensorHub_t.humidity_pct);
+                }
+                else if (Global_t.is_impact_detected)
+                {
+                    sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:IMPACT", (int32_t)Global_t.SensorHub_t.humidity_pct);
+                }
+                else
+                {
+                    sprintf(line_buf, "%-12s| H:%2ld%% ", "IMU:STABLE", (int32_t)Global_t.SensorHub_t.humidity_pct);
+                }
+                LCD_Send_String(line_buf);
+
+                /* --- DISPLAY MATRIX ROW 3: ACTUATOR VELOCITY & DIGITAL RESOLVER CURRENT --- */
+                LCD_Put_Cursor(3, 0);
+                if (Global_t.SensorHub_t.overcurrent_flag == 1)
+                {
+                    sprintf(line_buf, "%-12s|%4ldmA", "ERR:OVERCUR!", (int32_t)Global_t.SensorHub_t.current_mA);
+                }
+                else if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
+                {
+                    sprintf(line_buf, "%-12s|%4ldmA", "MOT:HLT", (int32_t)Global_t.SensorHub_t.current_mA);
+                }
+                else
+                {
+                    char speed_str[16];
+                    sprintf(speed_str, "MOT:%3d%%", Global_t.dc_motor_control.target_speed);
+                    sprintf(line_buf, "%-12s|%4ldmA", speed_str, (int32_t)Global_t.SensorHub_t.current_mA);
+                }
+                LCD_Send_String(line_buf);
+
+                /* Reset the downsampling phase divider accumulator */
+                lcd_refresh_divider = 0;
+            }
+        }
     }
 }
 
 
 
+
+
+
+
+
+
 /**
- * @brief  Task: Sensor Fusion & Environmental Monitoring (Low Priority)
+ * @brief  Task Slot: 5Hz (200ms Periodicity) - Climate Ingestion & Current Resolution
  * @author Mehmet Alperen BAKICI
- * @version v0.0.8 (Production Baseline - Heavy Cascaded Filter)
- * @date    19.05.2026
- * @details Implements a stable 3-stage cascaded digital filter (Strict Median +
- * 16-point Moving Average + Constant Heavy EMA) to eliminate erratic fırça spikes.
- * Fully hardfault protected and synchronized with power-on calibration.
+ * @date   2026.05.22
+ * @details Deterministic multirate pipeline driving DHT11 climate sampling via 1Hz
+ * decimation and high-performance DC motor telemetry calculations at 5Hz.
  */
-void StartSensorFusion(void *argument)
+void Start_5Hz_Task(void *argument)
 {
-    /* Hardware and Signal Conversion Constants */
-    const float ADC_TO_VOLT = 3.3f / 65535.0f;
-    const float SENSITIVITY = 0.185f; /* ACS712 5A Module Sensitivity (185mV/A) */
-    const float GAIN_FACTOR = 2.3f;   /* Empirical calibration gain factor */
-
-    /* Memory-Isolated Local Static Variables */
-    static float local_v_offset;
-    static float local_smoothed_current = 0.0f;
-    static uint8_t calibration_done_flag = 0;
-
-    /* Pull the fresh baseline established by the synchronous Power-On initialization */
-    local_v_offset = Global_t.SensorHub_t.v_offset;
-
-    /* Initialization Guard Delay */
-    osDelay(500);
-
-    /* 16-Element Signal Smoothing Ring Buffer Configuration */
-    #define MOVING_AVG_SIZE 16
-    float moving_avg_buffer[MOVING_AVG_SIZE] = {0.0f};
-    uint8_t avg_index = 0;
-    float moving_avg_sum = 0.0f;
-
-    /* CONSTANT HEAVY EMA LAYER 🚀
-     * Locked to 0.07f to permanently suppress brushed DC commutation ripple
-     * and avoid self-triggering false current spikes during nominal flight. */
-    const float EMA_ALPHA_HEAVY = 0.07f;
+    float temp_c = 0.0f;
+    float hum_pct = 0.0f;
+    static uint8_t dht11_decimation_cnt = 0;
 
     for(;;)
     {
-        uint32_t samples[15];
-
-        /* STEP 1: Burst Analog Data Acquisition via Shared DMA Buffer */
-        for(int i = 0; i < 15; i++)
+        /* Enforced periodic cadence from the TIM5 hardware master interrupt via semaphore pipeline */
+        if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_5Hz, portMAX_DELAY) == pdTRUE)
         {
-            samples[i] = (uint16_t)Global_t.SensorHub_t.adc_buffer[0];
-            osDelay(1);
-        }
+            /* RUNTIME TELEMETRY DIAGNOSTIC: Increment deterministic slot tracker */
+            Global_t.TaskMgmt_t.debug_5Hz_cnt++;
 
-        /* STEP 2: Non-Linear Median Filtering (Bubble Sort Optimization) */
-        for(int i = 0; i < 14; i++)
-        {
-            for(int j = i + 1; j < 15; j++)
+            /* --- SUB-ROUTINE A: RESOLVE CURRENT AND EXHAUST DSP PIPELINE (5Hz Rate) --- */
+            Process_Motor_Current_Resolution();
+
+            /* Advance the decimation timeline index for climate sensor */
+            dht11_decimation_cnt++;
+
+            /* 1Hz Gate Check: Execute physical acquisition once every 5 framework frames (1000ms) */
+            if (dht11_decimation_cnt >= 5)
             {
-                if(samples[i] > samples[j])
+                /* --- CRITICAL SAFE ZONE: CAPTURE LOCKOUT --- */
+                /* Suspend FreeRTOS scheduler to fully preserve microsecond resolution
+                 * of the underlying DWT hardware counter against preemptive tasks. */
+                vTaskSuspendAll();
+
+                /* Fire non-blocking low-level bit-banging capture on the 1-Wire physical bus */
+                uint8_t dht11_success = DHT11_Read_Raw(&temp_c, &hum_pct);
+
+                /* Re-enable the operating system scheduler instantly post critical bus burst */
+                xTaskResumeAll();
+
+                /* --- DATA VERIFICATION & HARDWARE INGESTION GATE --- */
+                if (dht11_success == 1 && temp_c > 0.1f && hum_pct > 0.1f && temp_c < 80.0f)
                 {
-                    uint32_t temp = samples[i];
-                    samples[i] = samples[j];
-                    samples[j] = temp;
+                    /* Commit verified metrics securely to the tightly packed global context */
+                    Global_t.SensorHub_t.temperature_C = temp_c;
+                    Global_t.SensorHub_t.humidity_pct  = hum_pct;
                 }
+
+                /* Clear the decimation tracking bucket for the subsequent 1000ms period */
+                dht11_decimation_cnt = 0;
             }
         }
+    }
+}
 
-        /* STEP 3: Strict Median Extraction
-         * Extract exactly the center sample (Index 7) to block asymmetrical spikes. */
-        float filtered_raw_adc = (float)samples[7];
-        float current_voltage = filtered_raw_adc * ADC_TO_VOLT;
 
-        /* STEP 4: Dynamic Continuous Gated-Calibration Execution */
-        if (Global_t.is_tilt_detected == 1)
+/**
+ * @brief  Task Slot: 1Hz (1000ms Periodicity) - Diagnostics & Network Telemetry
+ * @author Mehmet Alperen BAKICI
+ * @date   2026.05.21
+ * @details Toggles the system heartbeat LED and streams highly synchronized
+ * telemetry dataset via UART for edge AI / TinyML model ingestion at a strict 1Hz cadence.
+ */
+void Start_1Hz_Task(void *argument)
+{
+//    char uart_buf[160];
+
+    for(;;)
+    {
+        /* 👑 CRITICAL FIX: Rebound to the strict 1000ms hardware master clock semaphore.
+         * Using sem_1Hz ensures the LED toggles and telemetry transmits exactly once per second! */
+        if (xSemaphoreTake(Global_t.TaskMgmt_t.sem_1Hz, portMAX_DELAY) == pdTRUE)
         {
-            if (calibration_done_flag == 0)
+            /* --- STEP 1: SYSTEM HEARTBEAT INDICATOR --- */
+            if (Global_t.mpu6050_veriler.is_initialized)
             {
-                float dyn_offset_sum = 0.0f;
-                for(int c = 0; c < 30; c++)
-                {
-                    dyn_offset_sum += (float)((uint16_t)Global_t.SensorHub_t.adc_buffer[0]) * ADC_TO_VOLT;
-                    osDelay(5);
-                }
-                local_v_offset = dyn_offset_sum / 30.0f;
-                calibration_done_flag = 1;
+                /* Toggles cleanly at exactly 1Hz pace */
+                HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
             }
+
+            /* --- STEP 2: PRODUCTION TELEMETRY & TINYML DATA STREAM --- */
+            /* Authentic Clean Format for Edge AI Dataset Processing:
+             * [Smoothed_Current_mA],[Dynamic_Offset_mV],[Temperature_C],[Humidity_Pct] */
+//            int uart_len = sprintf(uart_buf, "%ld mA, %ld mV, T:%ld C, H:%%%ld\r\n",
+//                                   (int32_t)Global_t.SensorHub_t.current_mA,
+//                                   (int32_t)(Global_t.SensorHub_t.v_offset * 1000.0f),
+//                                   (int32_t)Global_t.SensorHub_t.temperature_C,
+//                                   (int32_t)Global_t.SensorHub_t.humidity_pct);
+//
+//            /* Non-blocking deterministic industrial logging transmission */
+//            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, uart_len, 30);
+
+
+            /* --- STEP 3: RUNTIME VERIFICATION ARCHIVE (COMMENTED OUT) ---
+            uint32_t current_hw_tick = Global_t.TaskMgmt_t.system_master_tick;
+            uint32_t total_100Hz     = Global_t.TaskMgmt_t.debug_100Hz_cnt;
+            uint32_t total_50Hz      = Global_t.TaskMgmt_t.debug_50Hz_cnt;
+            uint32_t total_25Hz      = Global_t.TaskMgmt_t.debug_25Hz_cnt;
+            uint32_t total_10Hz      = Global_t.TaskMgmt_t.debug_10Hz_cnt;
+            uint32_t total_5Hz       = Global_t.TaskMgmt_t.debug_5Hz_cnt;
+
+            int test_len = sprintf(uart_buf,
+                "[ARCHIVE] HW_Tick:%lu | 100Hz:%lu | 50Hz:%lu | 25Hz:%lu | 10Hz:%lu | 5Hz:%lu\r\n",
+                current_hw_tick, total_100Hz, total_50Hz, total_25Hz, total_10Hz, total_5Hz);
+            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, test_len, 30);
+            ------------------------------------------------------------------ */
         }
-        else
-        {
-            calibration_done_flag = 0;
-        }
-
-        /* STEP 5: Mathematical Current Computation with Direction Guard */
-        float delta_v = local_v_offset - current_voltage;
-        if(delta_v < 0.0f) { delta_v = -delta_v; }
-
-        float current_calculated = (delta_v / SENSITIVITY) * 1000.0f * GAIN_FACTOR;
-
-        /* STEP 6: Input-Stage Software Blanking (Dead-Band Budding) */
-        if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
-        {
-            current_calculated = 0.0f;
-        }
-        else if (current_calculated < 45.0f)
-        {
-            current_calculated = 0.0f;
-        }
-
-        /* STEP 7: Bound-Protected Moving Average Ring Buffer Execution */
-        moving_avg_sum -= moving_avg_buffer[avg_index];
-        moving_avg_buffer[avg_index] = current_calculated;
-        moving_avg_sum += moving_avg_buffer[avg_index];
-
-        avg_index = (avg_index + 1) & 15;
-        float moving_avg_result = moving_avg_sum / 16.0f;
-
-        /* STEP 8: Constant Heavy Smoothing Execution */
-        local_smoothed_current = (EMA_ALPHA_HEAVY * moving_avg_result) + ((1.0f - EMA_ALPHA_HEAVY) * local_smoothed_current);
-
-        /* Hardware Fail-Safe Interlocking Override */
-        if (Global_t.is_tilt_detected || Global_t.dc_motor_control.is_system_halted)
-        {
-            local_smoothed_current = 0.0f;
-        }
-
-        /* STEP 9: Telemetry Export to Global Shared Memory State */
-        Global_t.SensorHub_t.current_mA = local_smoothed_current;
-        Global_t.SensorHub_t.v_offset   = local_v_offset;
-
-        if (Global_t.SensorHub_t.current_mA > 1500.0f) {
-            Global_t.SensorHub_t.overcurrent_flag = 1;
-        } else {
-            Global_t.SensorHub_t.overcurrent_flag = 0;
-        }
-
-        /* STEP 10: Deterministic 1Hz Industrial UART Data Logging (Extended CSV Stream) */
-        static uint8_t log_counter = 0;
-        log_counter++;
-
-        if (log_counter >= 15) /* Calibrated to achieve precise ~1Hz streaming */
-        {
-        	char uart_buf[128]; // Expanded buffer size for extended dataset
-
-            /* Extended Format for TinyML: [Current_mA],[Offset_mV],[Tilt_Flag],[Temp_C],[Hum_Pct]
-             * All formats converted to %ld to perfectly match (int32_t) casting. */
-            int uart_len = sprintf(uart_buf, "%ld,%ld,%ld,%ld,%ld\r\n",
-                                   (int32_t)Global_t.SensorHub_t.current_mA,
-                                   (int32_t)(local_v_offset * 1000.0f),
-                                   (int32_t)Global_t.is_tilt_detected,
-                                   (int32_t)Global_t.SensorHub_t.temperature_C,
-                                   (int32_t)Global_t.SensorHub_t.humidity_pct);
-
-            HAL_UART_Transmit(&huart3, (uint8_t*)uart_buf, uart_len, 15);
-            log_counter = 0;
-        }
-
-        /* Task Periodicity Delay */
-        osDelay(50);
     }
 }
 
